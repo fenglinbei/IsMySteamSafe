@@ -11,7 +11,7 @@
 
 ## 面向公众发布前必须完成
 
-- [ ] 选择开源许可证并添加标准 `LICENSE`。
+- [x] 采用 Apache License 2.0，添加标准 `LICENSE`、`NOTICE` 与发行包复制逻辑。
 - [ ] 为 EXE 和安装/压缩包配置可信代码签名，记录证书主体与时间戳服务。
 - [ ] 在干净 Windows 10、Windows 11 与至少一个非管理员账户上复测。
 - [ ] 使用合法 Millennium、常见 Steam 皮肤、NVIDIA/Discord/RTSS 覆盖层建立误报语料。

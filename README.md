@@ -68,8 +68,12 @@ dotnet run --project .\IsMySteamSafe.SelfTest\IsMySteamSafe.SelfTest.csproj -c R
 - `docs/TEST-EVIDENCE.md`：自动测试、实机扫描与 UI 验收证据。
 - `docs/EVIDENCE-CHANGESET.md`：本次真实样本如何转化为检测与取证规则。
 - `docs/RELEASE-CHECKLIST.md`：正式公开发布前仍需完成的事项。
-- `LICENSE-STATUS.md`：当前授权状态。
+- `LICENSE-STATUS.md`：许可证范围与发行要求。
 
 ## 隐私
 
 默认体检不产生上传行为。只有用户主动选择“导出报告/只读取证”时才写入指定路径。证据包默认脱敏当前用户目录、17 位 SteamID 及 URL 的 `u=`/`d=` 参数，但仍可能包含进程名、域名、任务动作和注册表值，公开分享前请自行审阅。
+
+## 许可证
+
+本项目由 fenglinbei 按 [Apache License 2.0](LICENSE) 授权，SPDX 标识符为 `Apache-2.0`。版权与归属信息见 [NOTICE](NOTICE)，第三方组件的独立许可证见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。

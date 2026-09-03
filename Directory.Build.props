@@ -10,7 +10,10 @@
     <InformationalVersion>0.2.2-evidence</InformationalVersion>
     <Authors>IsMySteamSafe contributors</Authors>
     <Product>我的 Steam 安全吗？</Product>
-    <Copyright>Copyright © 2026</Copyright>
+    <Copyright>Copyright © 2026 fenglinbei</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/fenglinbei/IsMySteamSafe</RepositoryUrl>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 </Project>

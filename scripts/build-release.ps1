@@ -42,6 +42,8 @@ New-Item -ItemType Directory -Force -Path $docsDirectory | Out-Null
 New-Item -ItemType Directory -Force -Path $licensesDirectory | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $releaseDirectory 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'CHANGELOG.md') -Destination (Join-Path $releaseDirectory 'CHANGELOG.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination (Join-Path $releaseDirectory 'LICENSE')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'NOTICE') -Destination (Join-Path $releaseDirectory 'NOTICE')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE-STATUS.md') -Destination (Join-Path $releaseDirectory 'LICENSE-STATUS.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md') -Destination (Join-Path $releaseDirectory 'THIRD-PARTY-NOTICES.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\THREAT-MODEL.md') -Destination $docsDirectory
