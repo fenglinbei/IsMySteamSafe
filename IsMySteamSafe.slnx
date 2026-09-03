@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="IsMySteamSafe.Core/IsMySteamSafe.Core.csproj" />
+  <Project Path="IsMySteamSafe.App/IsMySteamSafe.App.csproj" />
+  <Project Path="IsMySteamSafe.SelfTest/IsMySteamSafe.SelfTest.csproj" />
+</Solution>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>IsMySteamSafe.SelfTest</AssemblyName>
+    <RootNamespace>IsMySteamSafe.SelfTest</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IsMySteamSafe.Core\IsMySteamSafe.Core.csproj" />
+  </ItemGroup>
+</Project>
