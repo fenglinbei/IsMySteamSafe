@@ -101,8 +101,8 @@ public static partial class JavaScriptAuditor
                     Area = AuditArea.InterfaceCode,
                     Title = signal.Title,
                     WhatFound = signal.Detail,
-                    Meaning = "Steam 的前端逻辑出现了与已知假红信手法一致的语义变化。这是客户端被改动的证据，不是对具体木马家族的命名。",
-                    Recommendation = "停止在当前 Steam 界面中付款或输入凭据，使用专业杀毒软件全盘扫描。确认系统干净后，从官网重装 Steam。",
+                    Meaning = "Steam 前端逻辑出现了与已知假红信手法一致的修改，这是客户端被改动的证据，但不能据此判断具体木马家族。",
+                    Recommendation = "停止在当前 Steam 界面付款或输入凭据，使用专业杀毒软件全盘扫描。确认查杀完成后，再从官网下载并重装 Steam。",
                     Target = path,
                     Evidence = [new("代码片段", FileUtilities.CompactSnippet(text, signal.Index))]
                 });
@@ -122,16 +122,16 @@ public static partial class JavaScriptAuditor
                 Area = AuditArea.SupportRoutes,
                 Title = $"{key} 附近出现第三方域名",
                 WhatFound = $"在 Steam 客服路由代码附近提取到 {uri.Host}。",
-                Meaning = "客服入口被指向 steampowered.com 之外的主机，是明确的客户端篡改信号。",
-                Recommendation = "不要访问该地址，不要扫码或付款。断网并交由专业杀毒软件处置，随后重装 Steam。",
+                Meaning = "客服入口指向 steampowered.com 之外的主机，说明 Steam 客户端已被修改。",
+                Recommendation = "不要访问该地址，不要扫码或付款，请断开网络并使用专业杀毒软件查杀，随后重装 Steam。",
                 Target = path,
                 Evidence = [new("路由键", key), new("提取 URL（参数已脱敏）", FileUtilities.RedactSensitiveText(url)), new("实际主机", uri.Host)]
             });
         }
 
         report.Metrics.RouteKeysObserved += routeKeys.Count;
-        if (skipped > 0) report.CoverageNotes.Add($"有 {skipped} 个 Steam JavaScript 文件因权限或大小上限未读取。不会把这部分标为已验证。");
-        report.CoverageNotes.Add("新版 Steam 的部分 URL 映射由 SteamClient.URL.GetSteamURLList 在运行时提供。本版会检查直接赋值和局部变量路由映射，但不会声称已读取全部运行时映射。");
+        if (skipped > 0) report.CoverageNotes.Add($"有 {skipped} 个 Steam JavaScript 文件因权限不足或超过大小上限而未读取，这部分不会标为已检查。");
+        report.CoverageNotes.Add("新版 Steam 的部分 URL 映射由 SteamClient.URL.GetSteamURLList 在运行时提供，本版会检查直接赋值和局部变量路由映射，但无法覆盖全部运行时映射。");
 
         bool invariantsPresent = popup && active && gameAction;
         AuditCheckResult interfaceCheck = new()
@@ -145,12 +145,12 @@ public static partial class JavaScriptAuditor
                 ? $"命中 {interfaceFindings} 处与假红信一致的语义篡改。"
                 : invariantsPresent
                     ? $"已读取 {report.Metrics.JavaScriptFilesChecked} 个脚本，关键动态逻辑仍可见。"
-                    : "未命中篡改指纹，但当前 Steam 版本中未找到全部关键结构。",
+                    : "未发现已支持的篡改特征，但当前 Steam 版本的部分关键结构未能定位。",
             EvidenceCount = interfaceFindings
         };
         if (!httpsCheck)
         {
-            report.CoverageNotes.Add("未能稳定定位当前 Steam 版本的 HTTPS 锁图标绘制结构，该子项不参与安全结论。");
+            report.CoverageNotes.Add("未能稳定定位当前 Steam 版本的 HTTPS 锁图标绘制结构，该项不参与安全结论。");
         }
 
         AuditCheckResult routeCheck = new()
@@ -195,7 +195,7 @@ public static partial class JavaScriptAuditor
                 signals.Add(new ScriptSignal(
                     $"{idPrefix}_FORCED_{(value ? "TRUE" : "FALSE")}",
                     AuditLevel.ConfirmedTampering,
-                    $"{subject}被强制设为{stateLabel}",
+                    $"{subject} 被强制设为{stateLabel}",
                     $"{method} 在局部函数体内返回固定{valueLabel}（return {expression}）。",
                     index + constantReturn.Index));
                 break;
@@ -231,8 +231,8 @@ public static partial class JavaScriptAuditor
                 signals.Add(new ScriptSignal(
                     "P0.JS.SECURE_LOCK_FORCED",
                     AuditLevel.HighlySuspicious,
-                    "地址安全状态疑似被固定为真",
-                    "URL/HTTP 相关代码附近把安全状态写成常量 true，需要与当前 Steam 版本人工复核。",
+                    "地址安全状态可能被固定为真",
+                    "URL/HTTP 相关代码附近将安全状态写成常量 true，需要结合当前 Steam 版本人工复核。",
                     index));
                 break;
             }

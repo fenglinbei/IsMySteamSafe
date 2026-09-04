@@ -56,8 +56,8 @@ public static class SteamClientFileAuditor
                     WhatFound = File.Exists(versionPath)
                         ? "Steam 客户端敏感目录内同时存在 version.dll 与 versionOrg.dll。"
                         : "Steam 客户端敏感目录内出现正常安装不应包含的 versionOrg.dll。",
-                    Meaning = "这是 DLL 侧载或转发常见结构，属于明确的客户端被改动信号。它说明 Steam 目录不是原始状态，但工具不据此命名具体病毒。",
-                    Recommendation = "立即停止付款或登录操作，断开网络，用已更新的专业杀毒软件做全盘扫描。确认系统干净后，从 Steam 官网重装客户端。不要由本工具直接删除证据。",
+                    Meaning = "这是常见的 DLL 侧载或转发结构，说明 Steam 客户端目录已被改动，但本工具不会据此判断具体病毒。",
+                    Recommendation = "请立即停止付款或登录，断开网络，并使用已更新的专业杀毒软件做全盘扫描。确认查杀完成后，再从 Steam 官网重装客户端。本工具不会直接删除证据。",
                     Target = directory,
                     Evidence = evidence
                 });
@@ -109,7 +109,7 @@ public static class SteamClientFileAuditor
                 {
                     evidence.Add(new EvidenceItem("相对 Steam 主程序时间", info.LastWriteTime > steamAnchor.Value.AddMinutes(2) ? "晚于 steam.exe（辅助证据）" : "未明显晚于 steam.exe"));
                 }
-                if (millenniumPresent) evidence.Add(new EvidenceItem("客户端扩展", "检测到 Millennium 目录，合法安装与恶意插件都可能使用此加载面。"));
+                if (millenniumPresent) evidence.Add(new EvidenceItem("客户端扩展", "检测到 Millennium 目录，合法安装与恶意插件都可能使用这一加载位置。"));
 
                 report.Findings.Add(new AuditFinding
                 {
@@ -120,11 +120,11 @@ public static class SteamClientFileAuditor
                     Title = title,
                     WhatFound = $"在 Steam 客户端敏感目录发现 {name}，其签名状态为“{signature.Detail}”。",
                     Meaning = userModContext
-                        ? "你已声明主动安装客户端插件，因此这里只标记为需要核对。合法加载器仍可能承载来历不明的插件。"
+                        ? "你已声明主动安装客户端插件，因此这里只标记为需要核对，合法加载器也可能承载来历不明的插件。"
                         : "这类名称可被 Windows DLL 搜索顺序用于侧载。游戏目录中的同名 MOD 不在本检查范围，只有 Steam 客户端目录会触发提示。",
                     Recommendation = userModContext
-                        ? "核对该组件是否来自你亲自安装的官方项目，并检查其插件列表。无法确认时，交给专业杀毒软件扫描。"
-                        : "不要双击或移动该文件。将路径与 SHA-256 交给专业杀毒软件复核，并优先按完整处置链处理。",
+                        ? "请核对该组件是否来自你亲自安装的官方项目，并检查插件列表。无法确认时，请交给专业杀毒软件扫描。"
+                        : "不要双击或移动该文件，请将路径与 SHA-256 交给专业杀毒软件复核，并优先按完整处理步骤排查。",
                     Target = path,
                     Evidence = evidence
                 });
@@ -142,7 +142,7 @@ public static class SteamClientFileAuditor
             Area = AuditArea.ClientFiles,
             Name = "客户端 DLL 侧载",
             Level = resultLevel,
-            Summary = count == 0 ? $"已检查 {directories.Count} 个 Steam 客户端敏感目录，未见已知侧载文件名。" : $"发现 {count} 组需要处理的客户端文件证据。",
+            Summary = count == 0 ? $"已检查 {directories.Count} 个 Steam 客户端敏感目录，未见已知侧载文件名。" : $"发现 {count} 组需要核对的客户端文件。",
             EvidenceCount = count
         };
     }

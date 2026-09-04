@@ -39,7 +39,7 @@ public static class ReportExporter
         text.AppendLine($"- 完成时间：{report.CompletedAt:yyyy-MM-dd HH:mm:ss zzz}");
         text.AppendLine($"- 结论：**{AuditLabels.Conclusion(report.Conclusion)}**");
         text.AppendLine();
-        text.AppendLine("> 本工具只审计 Steam 是否出现已支持的篡改状态，不是杀毒软件。“未发现迹象”不等于系统绝对安全。");
+        text.AppendLine("> 本工具仅检查 Steam 是否出现已支持的篡改状态，不提供杀毒功能，“未发现异常”不代表系统绝对安全。");
         text.AppendLine();
         text.AppendLine("## 检查概览");
         text.AppendLine();
@@ -55,7 +55,7 @@ public static class ReportExporter
         text.AppendLine();
         if (report.Findings.Count == 0)
         {
-            text.AppendLine("没有生成异常或信息类证据。");
+            text.AppendLine("未生成异常或提示类证据。");
         }
         else
         {
@@ -65,9 +65,9 @@ public static class ReportExporter
                 text.AppendLine();
                 text.AppendLine($"- 分级：{AuditLabels.Priority(finding.Priority)}");
                 if (!string.IsNullOrWhiteSpace(finding.Target)) text.AppendLine($"- 目标：`{Escape(finding.Target)}`");
-                text.AppendLine($"- 发现什么：{Escape(finding.WhatFound)}");
-                text.AppendLine($"- 意味着什么：{Escape(finding.Meaning)}");
-                text.AppendLine($"- 建议怎么做：{Escape(finding.Recommendation)}");
+                text.AppendLine($"- 检查结果：{Escape(finding.WhatFound)}");
+                text.AppendLine($"- 说明：{Escape(finding.Meaning)}");
+                text.AppendLine($"- 建议处理：{Escape(finding.Recommendation)}");
                 foreach (EvidenceItem evidence in finding.Evidence) text.AppendLine($"- {Escape(evidence.Name)}：`{Escape(evidence.Value)}`");
                 text.AppendLine();
             }
@@ -81,12 +81,12 @@ public static class ReportExporter
             text.AppendLine();
         }
 
-        text.AppendLine("## 如果出现强篡改信号");
+        text.AppendLine("## 发现明显篡改时");
         text.AppendLine();
         text.AppendLine("1. 停止付款、扫码和输入凭据，断开网络。");
-        text.AppendLine("2. 使用已更新的专业杀毒软件执行全盘扫描，确认系统干净。");
-        text.AppendLine("3. 在干净设备上修改 Steam 密码并重新绑定手机令牌。");
-        text.AppendLine("4. 卸载 Steam，从官网重新安装，不要只修补单个文件。");
+        text.AppendLine("2. 使用已更新的专业杀毒软件执行全盘扫描。");
+        text.AppendLine("3. 确认查杀完成后，在可信设备上修改 Steam 密码并重新绑定手机令牌。");
+        text.AppendLine("4. 卸载 Steam，并从官网重新安装，不要只修补单个文件。");
         text.AppendLine("5. 撤销其他设备授权，检查 Web API 密钥与购买记录。");
         text.AppendLine();
         text.AppendLine($"Steam 官方客服：{ProductInfo.OfficialSupportUrl}");
@@ -113,7 +113,7 @@ public static class ProfessionalHandoff
         StringBuilder text = new();
         text.AppendLine("《我的 Steam 安全吗？》专业杀毒软件交接清单");
         text.AppendLine();
-        text.AppendLine("重要顺序：先断网并完成全盘查杀，确认环境干净后，再修改密码。请勿颠倒。");
+        text.AppendLine("重要顺序：先断网并完成全盘查杀，确认查杀完成后，再修改密码。请勿颠倒。");
         text.AppendLine();
         if (report is not null)
         {
@@ -130,19 +130,19 @@ public static class ProfessionalHandoff
         }
         else
         {
-            text.AppendLine("尚无本次体检报告。建议先运行本地体检，再复制此清单。");
+            text.AppendLine("尚无本次体检报告，请先运行安全体检，再复制此清单。");
         }
 
         text.AppendLine();
-        text.AppendLine("建议处置链：");
+        text.AppendLine("建议处理步骤：");
         text.AppendLine("1. 断开网络，退出 Steam。 ");
         text.AppendLine("2. 更新并运行可信的专业杀毒软件（例如你已安装的 360、卡巴斯基或 Windows 安全中心），执行全盘扫描。 ");
-        text.AppendLine("3. 查杀后重启，再次全盘扫描，确认无检出。");
+        text.AppendLine("3. 查杀后重启并再次全盘扫描，确认没有检出。");
         text.AppendLine("4. 在干净设备上修改 Steam 密码并重新绑定手机令牌。 ");
         text.AppendLine("5. 卸载 Steam，从 https://store.steampowered.com/about/ 重新安装。 ");
         text.AppendLine("6. 在 Steam 客服中撤销其他设备授权，检查 Web API 密钥和购买记录。 ");
         text.AppendLine();
-        text.AppendLine("本工具不会删除、隔离或修复文件，实际查杀交给专业安全软件。");
+        text.AppendLine("本工具不会删除、隔离或修复文件，实际查杀请交给专业安全软件。");
         return text.ToString();
     }
 }

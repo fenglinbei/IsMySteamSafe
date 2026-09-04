@@ -46,12 +46,12 @@ public static class SteamConfigurationAuditor
         FileInfo info = new(path);
         List<EvidenceItem> evidence =
         [
-            new("命中设置", string.Join("；", matched)),
+            new("发现的设置", string.Join("；", matched)),
             new("SHA-256", hash),
             new("文件大小", $"{info.Length:N0} 字节"),
             new("创建时间", info.CreationTimeUtc.ToString("O")),
             new("修改时间", info.LastWriteTimeUtc.ToString("O")),
-            new("与本次样本配置哈希一致", hash.Equals(EvidenceSampleHash, StringComparison.OrdinalIgnoreCase) ? "是" : "否")
+            new("与已分析样本的配置哈希一致", hash.Equals(EvidenceSampleHash, StringComparison.OrdinalIgnoreCase) ? "是" : "否")
         ];
 
         report.Findings.Add(new AuditFinding
@@ -65,9 +65,9 @@ public static class SteamConfigurationAuditor
                 ? "steam.cfg 同时启用了 BootStrapperInhibitAll，并禁用了 BootStrapperForceSelfUpdate。"
                 : $"steam.cfg 命中 {matched.Count} 项更新/离线控制设置。",
             Meaning = updatePair
-                ? "这会阻止 Steam 正常自更新，能够帮助被篡改的前端文件持续存在。本次真实样本也使用了同一配置组合，单独出现仍不能命名具体木马。"
+                ? "这会阻止 Steam 正常自动更新，使被篡改的前端文件继续存在。已分析的真实样本也使用了相同配置，但仅凭这一项不能判断具体木马。"
                 : "高级维护场景可能主动使用 steam.cfg，但普通客户端通常不需要这些设置。",
-            Recommendation = "不要只删除这一文件后就认定系统安全。先保留报告并由专业杀毒软件查杀，确认系统干净后从 Steam 官网重装客户端。",
+            Recommendation = "不要只删除这一文件就认定系统安全，请先保留报告并使用专业杀毒软件查杀。确认查杀完成后，再从 Steam 官网重装客户端。",
             Target = path,
             Evidence = evidence
         });

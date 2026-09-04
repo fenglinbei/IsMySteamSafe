@@ -42,12 +42,12 @@ public static class EvidenceBundleExporter
     {
         string fullPath = Path.GetFullPath(outputPath);
         string? parent = Path.GetDirectoryName(fullPath);
-        if (parent is null) throw new ArgumentException("导出路径无效。", nameof(outputPath));
+        if (parent is null) throw new ArgumentException("证据包保存路径无效。", nameof(outputPath));
         Directory.CreateDirectory(parent);
         string partialPath = fullPath + $".partial-{Guid.NewGuid():N}";
 
         EvidenceBundle bundle = await CollectAsync(audit, options, progress, cancellationToken);
-        progress?.Report(new EvidenceProgress(92, "写入证据包", "生成 JSON、Markdown 与 CSV 清单"));
+        progress?.Report(new EvidenceProgress(92, "写入证据包", "生成 JSON、Markdown 和 CSV 清单"));
         try
         {
             await using (FileStream stream = new(partialPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
@@ -76,7 +76,7 @@ public static class EvidenceBundleExporter
             File.Move(partialPath, fullPath, overwrite: true);
             string sha256 = await FileUtilities.Sha256Async(fullPath, cancellationToken);
             FileInfo info = new(fullPath);
-            progress?.Report(new EvidenceProgress(100, "取证完成", "证据包已写入，未复制任何二进制样本"));
+            progress?.Report(new EvidenceProgress(100, "证据提取完成", "证据包已写入，未复制任何二进制样本"));
             return new EvidenceExportResult(fullPath, sha256, info.Length, bundle.BundleId);
         }
         catch
@@ -108,10 +108,10 @@ public static class EvidenceBundleExporter
         HashBudget processHashBudget = new(512L * 1024 * 1024);
         HashBudget fileHashBudget = new(MaximumHashTotalBytes);
 
-        progress?.Report(new EvidenceProgress(8, "记录进程", "读取 PID、父 PID、路径、签名及相关模块"));
+        progress?.Report(new EvidenceProgress(8, "记录进程", "读取 PID、父 PID、程序路径、签名和相关模块"));
         await CollectProcessesAsync(bundle, layout, processHashBudget, cancellationToken);
 
-        progress?.Report(new EvidenceProgress(24, "记录网络", "通过 Windows API 读取 IPv4 TCP 连接与代理/DNS 配置"));
+        progress?.Report(new EvidenceProgress(24, "记录网络", "通过 Windows API 读取 IPv4 TCP 连接、代理和 DNS 配置"));
         CollectConnections(bundle);
         CollectNetworkSettings(bundle);
 
@@ -122,7 +122,7 @@ public static class EvidenceBundleExporter
         progress?.Report(new EvidenceProgress(53, "记录计划任务", "读取任务文件元数据、哈希与动作字段"));
         await CollectScheduledTasksAsync(bundle, fileHashBudget, cancellationToken);
 
-        progress?.Report(new EvidenceProgress(66, "记录证书", "只保存证书元数据，不导出证书或私钥"));
+        progress?.Report(new EvidenceProgress(66, "记录证书信息", "仅保存证书元数据，不导出证书或私钥"));
         CollectCertificates(bundle);
 
         progress?.Report(new EvidenceProgress(76, "记录 Steam 文件", "计算关键客户端文件哈希，不复制文件内容"));
@@ -130,12 +130,12 @@ public static class EvidenceBundleExporter
 
         if (options.AdditionalRoots.Count > 0)
         {
-            progress?.Report(new EvidenceProgress(84, "记录补充目录", "只读取用户选择目录的元数据与哈希"));
+            progress?.Report(new EvidenceProgress(84, "记录补充目录", "仅读取用户所选目录的文件元数据并计算哈希"));
             await CollectAdditionalRootsAsync(bundle, options.AdditionalRoots, fileHashBudget, cancellationToken);
         }
 
-        bundle.Coverage.Add(new EvidenceCoverage("样本文件", "未收集", "证据包不复制 EXE、DLL、压缩包或大型脚本，仅保存路径、元数据、签名、SHA-256 和少量文本配置。"));
-        bundle.Coverage.Add(new EvidenceCoverage("隐私", "已脱敏", "默认替换当前用户目录、17 位 SteamID，以及 URL 的 u=/d= 参数。"));
+        bundle.Coverage.Add(new EvidenceCoverage("样本文件", "未收集", "证据包不会复制 EXE、DLL、压缩包或大型脚本，仅保存路径、元数据、签名、SHA-256 和少量文本配置。"));
+        bundle.Coverage.Add(new EvidenceCoverage("隐私", "已脱敏", "默认脱敏当前用户目录、17 位 SteamID，以及 URL 中的 u= 和 d= 参数。"));
         return bundle;
     }
 
@@ -186,7 +186,7 @@ public static class EvidenceBundleExporter
         CancellationToken cancellationToken)
     {
         Dictionary<int, int> parentPids = NativeMethods.GetParentProcessIds(out string? parentError);
-        if (parentError is not null) bundle.Coverage.Add(new EvidenceCoverage("进程树", "部分", parentError));
+        if (parentError is not null) bundle.Coverage.Add(new EvidenceCoverage("进程树", "部分完成", parentError));
         int pathFailures = 0;
         int moduleFailures = 0;
         string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -260,14 +260,14 @@ public static class EvidenceBundleExporter
                 catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
                 {
                     moduleFailures++;
-                    bundle.Coverage.Add(new EvidenceCoverage("进程模块", "部分", $"无法读取 {name} (PID {process.Id}) 的模块：{ex.Message}"));
+                    bundle.Coverage.Add(new EvidenceCoverage("进程模块", "部分完成", $"无法读取 {name} (PID {process.Id}) 的模块：{ex.Message}"));
                 }
             }
         }
 
-        bundle.Coverage.Add(new EvidenceCoverage("进程列表", pathFailures == 0 ? "完整" : "部分", $"记录 {bundle.Processes.Count} 个进程，{pathFailures} 个路径不可读。"));
-        bundle.Coverage.Add(new EvidenceCoverage("相关进程模块", moduleFailures == 0 ? "完整" : "部分", $"记录 {bundle.Modules.Count} 个 Steam、Wallpaper 内容或用户目录相关模块，{moduleFailures} 个进程无法枚举。"));
-        bundle.Coverage.Add(new EvidenceCoverage("进程命令行", "未收集", "普通权限下不使用 WMI 或命令行工具。本临时版记录 PID、父 PID、映像路径、签名和哈希。"));
+        bundle.Coverage.Add(new EvidenceCoverage("进程列表", pathFailures == 0 ? "完整" : "部分完成", $"记录 {bundle.Processes.Count} 个进程，{pathFailures} 个进程路径无法读取。"));
+        bundle.Coverage.Add(new EvidenceCoverage("相关进程模块", moduleFailures == 0 ? "完整" : "部分完成", $"记录 {bundle.Modules.Count} 个与 Steam、Wallpaper 内容或用户目录相关的模块，{moduleFailures} 个进程无法读取模块。"));
+        bundle.Coverage.Add(new EvidenceCoverage("进程命令行", "未收集", "普通权限下不会使用 WMI 或命令行工具，本版记录 PID、父 PID、程序路径、签名和哈希。"));
     }
 
     private static void CollectConnections(EvidenceBundle bundle)
@@ -286,7 +286,7 @@ public static class EvidenceBundleExporter
                     row.RemoteAddress,
                     row.RemotePort));
             }
-            bundle.Coverage.Add(new EvidenceCoverage("TCP 连接", "部分", $"通过 GetExtendedTcpTable 记录 {bundle.Connections.Count} 条 IPv4 TCP 状态，IPv6 与历史已关闭连接不在本临时版中。"));
+            bundle.Coverage.Add(new EvidenceCoverage("TCP 连接", "部分完成", $"通过 GetExtendedTcpTable 记录 {bundle.Connections.Count} 条 IPv4 TCP 状态，本版暂不包含 IPv6 和已关闭的历史连接。"));
         }
         catch (Exception ex)
         {
@@ -371,7 +371,7 @@ public static class EvidenceBundleExporter
                 CollectRegistryKey(bundle, RegistryHive.LocalMachine, view, "HKLM", $@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\{executable}");
             }
         }
-        bundle.Coverage.Add(new EvidenceCoverage("注册表启动链", "部分", $"记录 {bundle.RegistryValues.Count} 个目标值，覆盖 Run/RunOnce 与三个 Steam 映像名的 IFEO/SilentProcessExit。"));
+        bundle.Coverage.Add(new EvidenceCoverage("注册表启动链", "部分完成", $"记录 {bundle.RegistryValues.Count} 个目标值，覆盖 Run/RunOnce 和三个 Steam 进程的 IFEO/SilentProcessExit 配置。"));
     }
 
     private static void CollectRegistryKey(EvidenceBundle bundle, RegistryHive hive, RegistryView view, string label, string keyPath)
@@ -389,7 +389,7 @@ public static class EvidenceBundleExporter
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
-            bundle.Coverage.Add(new EvidenceCoverage("注册表", "部分", $"无法读取 {label}\\{keyPath} ({view})：{ex.Message}"));
+            bundle.Coverage.Add(new EvidenceCoverage("注册表", "部分完成", $"无法读取 {label}\\{keyPath} ({view})：{ex.Message}"));
         }
     }
 
@@ -417,7 +417,7 @@ public static class EvidenceBundleExporter
                 }
                 catch { errors++; }
             }
-            bundle.Coverage.Add(new EvidenceCoverage("服务", errors == 0 ? "完整" : "部分", $"从注册表记录 {bundle.Services.Count} 个服务，{errors} 个子项不可读。"));
+            bundle.Coverage.Add(new EvidenceCoverage("服务", errors == 0 ? "完整" : "部分完成", $"从注册表记录 {bundle.Services.Count} 个服务，{errors} 个子项无法读取。"));
         }
         catch (Exception ex)
         {
@@ -456,7 +456,7 @@ public static class EvidenceBundleExporter
             }
             catch { errors++; }
         }
-        bundle.Coverage.Add(new EvidenceCoverage("计划任务", errors == 0 ? "完整" : "部分", $"记录 {bundle.ScheduledTasks.Count} 个任务文件，{errors} 个目录或文件不可读。"));
+        bundle.Coverage.Add(new EvidenceCoverage("计划任务", errors == 0 ? "完整" : "部分完成", $"记录 {bundle.ScheduledTasks.Count} 个任务文件，{errors} 个目录或文件无法读取。"));
     }
 
     private static void CollectCertificates(EvidenceBundle bundle)
@@ -487,7 +487,7 @@ public static class EvidenceBundleExporter
                 catch { errors++; }
             }
         }
-        bundle.Coverage.Add(new EvidenceCoverage("证书元数据", errors == 0 ? "完整" : "部分", $"记录 {bundle.Certificates.Count} 张证书的主题、颁发者、指纹与有效期，未导出证书和私钥。{errors} 个存储区不可读。"));
+        bundle.Coverage.Add(new EvidenceCoverage("证书元数据", errors == 0 ? "完整" : "部分完成", $"记录 {bundle.Certificates.Count} 张证书的主题、颁发者、指纹和有效期，未导出证书或私钥。另有 {errors} 个证书存储区无法读取。"));
     }
 
     private static async Task CollectSteamFilesAsync(EvidenceBundle bundle, SteamLayout layout, HashBudget hashBudget, CancellationToken cancellationToken)
@@ -539,7 +539,7 @@ public static class EvidenceBundleExporter
                 }
             }
         }
-        bundle.Coverage.Add(new EvidenceCoverage("Steam 关键文件", failures == 0 ? "完整" : "部分", $"记录 {bundle.Files.Count(item => item.Source == "Steam")} 个 Steam 主程序、配置、前端脚本与侧载敏感文件，未复制文件。"));
+        bundle.Coverage.Add(new EvidenceCoverage("Steam 关键文件", failures == 0 ? "完整" : "部分完成", $"记录 {bundle.Files.Count(item => item.Source == "Steam")} 个 Steam 主程序、配置、前端脚本和侧载敏感文件，未复制文件。"));
     }
 
     private static async Task CollectAdditionalRootsAsync(
@@ -579,7 +579,7 @@ public static class EvidenceBundleExporter
             }
             if (count >= MaximumAdditionalFiles) break;
         }
-        bundle.Coverage.Add(new EvidenceCoverage("补充目录", errors == 0 ? "完整" : "部分", $"记录 {count} 个文件，上限 {MaximumAdditionalFiles}。大型文件只保留元数据，小于等于 {MaximumHashFileBytes / 1024 / 1024} MiB 才计算哈希。"));
+        bundle.Coverage.Add(new EvidenceCoverage("补充目录", errors == 0 ? "完整" : "部分完成", $"记录 {count} 个文件，上限为 {MaximumAdditionalFiles} 个。大型文件仅保留元数据，不超过 {MaximumHashFileBytes / 1024 / 1024} MiB 的文件才会计算哈希。"));
     }
 
     private static async Task<EvidenceFile> DescribeFileAsync(string source, string path, HashBudget hashBudget, CancellationToken cancellationToken)
@@ -667,15 +667,15 @@ public static class EvidenceBundleExporter
     }
 
     private static string BuildReadme(EvidenceBundle bundle) => $"""
-        我的 Steam 安全吗？ v{ProductInfo.Version} 只读取证包
+        我的 Steam 安全吗？ v{ProductInfo.Version} 证据包
 
         证据包编号：{bundle.BundleId:N}
         收集时间：{bundle.CollectedAt:O}
 
-        这个 ZIP 只包含 JSON、Markdown、CSV 和 TXT 清单，不会包含原始 EXE、DLL、压缩包、证书或私钥，也不会执行发现的文件。
+        此 ZIP 仅包含 JSON、Markdown、CSV 和 TXT 清单，不包含原始 EXE、DLL、压缩包、证书或私钥，也不会执行发现的文件。
         默认脱敏：当前用户目录、17 位 SteamID、URL 中的 u= 和 d= 参数。
-        注意：进程和网络连接是瞬时快照，已退出的进程和已关闭的连接无法追溯。权限不足会写入 coverage.csv，而不会伪装成“已检查”。
-        分享前仍请人工检查 text-snapshots.txt、registry.csv 和 scheduled-tasks.csv 是否含有你不希望公开的信息。
+        注意：进程和网络连接是瞬时快照，已退出的进程和已关闭的连接无法追溯。权限不足的项目会写入 coverage.csv，不会标记为“已检查”。
+        分享前，请检查 text-snapshots.txt、registry.csv 和 scheduled-tasks.csv 中是否包含不希望公开的信息。
         """;
 
     private static void WriteText(ZipArchive archive, string name, string content)

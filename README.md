@@ -1,10 +1,16 @@
 # 我的 Steam 安全吗？
 
+<img src="IsMySteamSafe.App/Assets/App.png" width="96" height="96" alt="我的 Steam 安全吗？应用图标" />
+
 > 不是杀毒软件，而是一个回答“我的 Steam 到底被没被动过手脚”的本地审计工具。
 
-当前版本：**v0.2.2-evidence**。这是供产品所有者和受控染毒环境取证的临时构建，尚未代码签名。
+当前版本：**v0.2.4**。提供当前用户安装包和便携包，保留客户端检查与只读取证能力。签名类型以包内 `SIGNING.txt` 为准，自签名构建不等于公开受信任的发布者签名。
+
+使用 `IsMySteamSafe-0.2.4-setup.exe` 安装，默认目录为当前用户的 `%LOCALAPPDATA%\Programs\IsMySteamSafe`，不要求管理员权限。卸载只移除程序和快捷方式，不删除另行保存的报告与证据包。源码、程序、安装器和卸载器分别打包验证，签名及信任说明见 [SIGNING.md](docs/SIGNING.md)。
 
 ## 它会做什么
+
+后续规划：[扩展至本机所有 Steam 创意工坊](docs/ROADMAP.md)。当前只自动关联 Wallpaper Engine 工坊，下一阶段覆盖所有游戏的本地项目，仍保持快速、只读、不查杀。图标来源与重建方式见 [ICONS.md](docs/ICONS.md)。
 
 - 检查 Steam 客户端敏感目录中的 `version.dll`、`versionOrg.dll`、`msacm32.drv` 与 `wsock32.dll`，验证数字签名并记录 SHA-256。
 - 检查 steamui 中与客服告警、游戏启动、隐藏地址栏和客服路由有关的语义级篡改迹象，支持局部变量间接路由。

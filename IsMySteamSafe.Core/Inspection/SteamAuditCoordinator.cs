@@ -11,13 +11,13 @@ public sealed class SteamAuditCoordinator
         CancellationToken cancellationToken = default)
     {
         AuditReport report = new();
-        progress?.Report(new AuditProgress(4, "定位 Steam", "只读取注册表与常见安装位置"));
+        progress?.Report(new AuditProgress(4, "定位 Steam", "仅检查注册表和常见安装位置"));
         SteamLayout layout = SteamLocator.Discover();
         report.SteamRoots.AddRange(layout.SteamRoots);
 
         if (layout.SteamRoots.Count == 0)
         {
-            report.CoverageNotes.Add("没有找到 Steam 安装目录。可确认 Steam 已安装并至少启动过一次后重试。");
+            report.CoverageNotes.Add("没有找到 Steam 安装目录，请确认 Steam 已安装并至少启动过一次，然后重试。");
             report.Checks.AddRange(MissingSteamChecks());
         }
         else
@@ -31,7 +31,7 @@ public sealed class SteamAuditCoordinator
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 rootIndex++;
-                progress?.Report(new AuditProgress(10 + rootIndex * 8, "检查客户端文件", $"核对 DLL 侧载与签名（{rootIndex}/{layout.SteamRoots.Count}）", root));
+                progress?.Report(new AuditProgress(10 + rootIndex * 8, "检查客户端文件", $"检查 DLL 侧载与签名（{rootIndex}/{layout.SteamRoots.Count}）", root));
                 try
                 {
                     fileChecks.Add(await SteamClientFileAuditor.AuditAsync(root, options, report, cancellationToken));
@@ -39,12 +39,12 @@ public sealed class SteamAuditCoordinator
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    report.CoverageNotes.Add($"客户端文件检查未完成：{root} · {ex.Message}");
+                    report.CoverageNotes.Add($"客户端文件检查未完成：{root}，{ex.Message}");
                     fileChecks.Add(Incomplete("client-files", AuditPriority.P0, AuditArea.ClientFiles, "客户端 DLL 侧载", "目录无法完整读取。"));
                     configurationChecks.Add(Incomplete("client-configuration", AuditPriority.P1, AuditArea.ClientConfiguration, "Steam 更新配置", "目录无法完整读取。"));
                 }
 
-                progress?.Report(new AuditProgress(32 + rootIndex * 8, "检查 Steam 界面", "查找客服告警、游戏启动与路由语义", root));
+                progress?.Report(new AuditProgress(32 + rootIndex * 8, "检查 Steam 界面", "检查客服告警、游戏启动和路由逻辑", root));
                 try
                 {
                     (AuditCheckResult interfaceCheck, AuditCheckResult routeCheck) = await JavaScriptAuditor.AuditAsync(root, report, cancellationToken);
@@ -53,7 +53,7 @@ public sealed class SteamAuditCoordinator
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    report.CoverageNotes.Add($"steamui 脚本检查未完成：{root} · {ex.Message}");
+                    report.CoverageNotes.Add($"steamui 脚本检查未完成：{root}，{ex.Message}");
                     interfaceChecks.Add(Incomplete("interface-code", AuditPriority.P0, AuditArea.InterfaceCode, "steamui 关键逻辑", "脚本无法完整读取。"));
                     routeChecks.Add(Incomplete("support-routes", AuditPriority.P0, AuditArea.SupportRoutes, "客服路由域名", "脚本无法完整读取。"));
                 }
@@ -68,16 +68,16 @@ public sealed class SteamAuditCoordinator
         if (options.IncludeExtendedChecks)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new AuditProgress(65, "检查运行状态", "只读枚举 Steam 进程模块"));
+            progress?.Report(new AuditProgress(65, "检查运行状态", "仅检查 Steam 进程模块"));
             report.Checks.Add(ProcessModuleAuditor.Audit(layout, report, cancellationToken));
 
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new AuditProgress(76, "检查启动链", "只读查看 Steam 相关 Run、IFEO 与退出触发器"));
+            progress?.Report(new AuditProgress(76, "检查启动链", "仅检查 Steam 相关 Run、IFEO 和退出触发器"));
             report.Checks.Add(RegistryPersistenceAuditor.Audit(layout, report));
             report.Checks.Add(NetworkConfigurationAuditor.Audit(report));
 
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new AuditProgress(88, "整理内容来源", "只列出 Wallpaper Engine 项目类型与近期变化"));
+            progress?.Report(new AuditProgress(88, "整理内容来源", "仅列出 Wallpaper Engine 项目类型和近期变化"));
             report.Checks.Add(WorkshopSourceObserver.Observe(layout, report, cancellationToken));
         }
 
@@ -90,7 +90,7 @@ public sealed class SteamAuditCoordinator
 
     private static AuditCheckResult Merge(IReadOnlyList<AuditCheckResult> checks)
     {
-        if (checks.Count == 0) throw new ArgumentException("至少需要一项检查结果。", nameof(checks));
+        if (checks.Count == 0) throw new ArgumentException("未生成检查结果。", nameof(checks));
         AuditCheckResult strongest = checks.OrderByDescending(item => AuditLabels.RiskRank(item.Level)).First();
         return new AuditCheckResult
         {

@@ -5,9 +5,12 @@
     <AssemblyName>IsMySteamSafe</AssemblyName>
     <RootNamespace>IsMySteamSafe.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\App.ico</ApplicationIcon>
     <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets\App.ico" />
+    <Resource Include="Assets\App.png" />
     <ProjectReference Include="..\IsMySteamSafe.Core\IsMySteamSafe.Core.csproj" />
   </ItemGroup>
 </Project>

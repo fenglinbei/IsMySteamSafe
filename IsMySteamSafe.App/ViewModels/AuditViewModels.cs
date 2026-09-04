@@ -25,7 +25,7 @@ public sealed class FindingViewModel
     public string Recommendation => Finding.Recommendation;
     public string Target => Finding.Target ?? "—";
     public string EvidenceText => Finding.Evidence.Count == 0
-        ? "没有附加字段"
+        ? "无附加信息"
         : string.Join(Environment.NewLine, Finding.Evidence.Select(item => $"{item.Name}：{item.Value}"));
     public Brush Accent => Palette.Accent(Finding.Level);
     public Brush Tint => Palette.Tint(Finding.Level);

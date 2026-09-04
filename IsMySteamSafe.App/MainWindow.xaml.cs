@@ -59,7 +59,7 @@ public partial class MainWindow : Window
         ResultsPanel.Visibility = Visibility.Collapsed;
         EmptyResultsPanel.Visibility = Visibility.Visible;
         EmptyResultsTitleText.Text = "正在逐项核对";
-        EmptyResultsDescriptionText.Text = "这里只读取证据，不会尝试清除或修复任何内容。";
+        EmptyResultsDescriptionText.Text = "仅收集证据，不会尝试清除或修复任何内容。";
         ApplyHero("体检进行中", "正在确认 Steam 客户端有没有被动过", "扫描只在本机进行，请保持窗口打开。", Palette.BlueTint, Palette.Blue, "…");
         _auditCancellation = new CancellationTokenSource();
         CancellationToken token = _auditCancellation.Token;
@@ -81,8 +81,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ApplyHero("未完成", "体检遇到错误", "错误不会触发自动修复，请保留信息后重试。", Palette.RedTint, Palette.Red, "!");
-            FooterStatusText.Text = "体检失败 · 没有修改任何系统状态";
+            ApplyHero("未完成", "体检遇到错误", "检查出现错误，请保留信息后重试。", Palette.RedTint, Palette.Red, "!");
+            FooterStatusText.Text = "体检失败";
             MessageBox.Show(this, ex.Message, "体检未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
@@ -110,7 +110,7 @@ public partial class MainWindow : Window
     private void ClearEvidenceFolder_Click(object sender, RoutedEventArgs e)
     {
         _additionalEvidenceRoot = null;
-        EvidenceFolderTextBox.Text = "未选择（仅收集 Steam 与系统证据）";
+        EvidenceFolderTextBox.Text = "未选择";
     }
 
     private async void ExportEvidence_Click(object sender, RoutedEventArgs e)
@@ -118,9 +118,9 @@ public partial class MainWindow : Window
         if (_busy) return;
         SaveFileDialog dialog = new()
         {
-            Title = "导出只读取证包",
+            Title = "导出证据包",
             Filter = "ZIP 证据包 (*.zip)|*.zip",
-            FileName = $"Steam只读取证-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
+            FileName = $"Steam安全证据-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
             AddExtension = true
         };
         if (dialog.ShowDialog(this) != true) return;
@@ -133,7 +133,7 @@ public partial class MainWindow : Window
             AuditReport? report = _lastReport;
             if (report is null)
             {
-                UpdateEvidenceProgress(new EvidenceProgress(2, "先完成 Steam 体检", "没有可复用的本次结果，正在执行同一套只读审计"));
+                UpdateEvidenceProgress(new EvidenceProgress(2, "先完成 Steam 体检", "没有可复用的体检结果，正在重新检查"));
                 SteamAuditOptions auditOptions = new(ClientModsCheckBox.IsChecked == true, IncludeExtendedChecks: true);
                 report = await Task.Run(() => _coordinator.RunAsync(auditOptions, cancellationToken: token), token);
                 _lastReport = report;
@@ -149,24 +149,24 @@ public partial class MainWindow : Window
             EvidencePercentText.Text = "100%";
             EvidenceStageText.Text = "证据包已生成";
             EvidenceDetailText.Text = $"{result.Size / 1024.0 / 1024.0:N1} MiB · SHA-256：{result.Sha256}";
-            FooterStatusText.Text = $"只读取证包已导出 · {result.Path}";
+            FooterStatusText.Text = $"证据包已导出 · {result.Path}";
             MessageBox.Show(this,
                 $"证据包已生成。\n\n编号：{result.BundleId:N}\nSHA-256：{result.Sha256}\n\n分享前请检查其中的文本和注册表清单。",
-                "只读取证完成",
+                "证据提取完成",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
         catch (OperationCanceledException)
         {
             EvidenceStageText.Text = "已取消";
-            EvidenceDetailText.Text = "未留下半成品证据包，也没有修改系统状态。";
-            FooterStatusText.Text = "取证已取消 · 没有修改任何系统状态";
+            EvidenceDetailText.Text = "证据提取已安全停止";
+            FooterStatusText.Text = "证据提取已安全停止";
         }
         catch (Exception ex)
         {
             EvidenceStageText.Text = "取证未完成";
             EvidenceDetailText.Text = ex.Message;
-            FooterStatusText.Text = "取证失败 · 没有修改任何系统状态";
+            FooterStatusText.Text = "证据提取失败";
             MessageBox.Show(this, ex.Message, "证据包导出失败", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
@@ -183,7 +183,7 @@ public partial class MainWindow : Window
         EvidencePercentText.Text = $"{progress.Percent}%";
         EvidenceStageText.Text = progress.Stage;
         EvidenceDetailText.Text = progress.Detail;
-        FooterStatusText.Text = $"{progress.Stage} · 只读取证";
+        FooterStatusText.Text = $"{progress.Stage} · 证据提取";
     }
 
     private void UpdateProgress(AuditProgress progress)
@@ -215,22 +215,22 @@ public partial class MainWindow : Window
         ProgressPercentText.Text = "100%";
         ProgressStageText.Text = "体检完成";
         ProgressDetailText.Text = $"{report.Checks.Count} 项检查 · {report.Findings.Count} 条证据/提示 · {report.CoverageNotes.Count} 条覆盖说明";
-        FooterStatusText.Text = $"体检完成 · {AuditLabels.Conclusion(report.Conclusion)} · 没有修改系统状态";
+        FooterStatusText.Text = $"体检完成 · {AuditLabels.Conclusion(report.Conclusion)}";
         SteamPathText.Text = report.SteamRoots.Count == 0 ? "未找到 Steam" : $"Steam：{string.Join("；", report.SteamRoots)}";
 
         switch (report.Conclusion)
         {
             case AuditConclusion.NoTamperingFound:
-                ApplyHero("本次结论", "未发现 Steam 客户端篡改迹象", "这是“未命中已支持证据”，不是对整台电脑的绝对安全保证。", Palette.GreenTint, Palette.Green, "✓");
+                ApplyHero("本次结论", "未发现 Steam 客户端篡改迹象", "当前未检测到可疑事项，但不保证已完全安全", Palette.GreenTint, Palette.Green, "✓");
                 break;
             case AuditConclusion.ReviewNeeded:
-                ApplyHero("本次结论", "有几项需要你核对", "先确认是否来自你主动安装的客户端插件，不认识的项目交给专业杀毒软件。", Palette.AmberTint, Palette.Amber, "!");
+                ApplyHero("本次结论", "有几项需要你核对", "先确认是否来自你主动安装的客户端插件，若为不认识的项目请交给专业杀毒软件辨别。", Palette.AmberTint, Palette.Amber, "!");
                 break;
             case AuditConclusion.StrongTamperingSignal:
                 ApplyHero("请先停止操作", "发现强篡改信号", "不要付款、扫码或立刻改密码。先断网并交给专业杀毒软件全盘查杀。", Palette.RedTint, Palette.Red, "!");
                 break;
             default:
-                ApplyHero("覆盖不足", "体检没有完整覆盖所有项目", "请查看灰色检查卡与覆盖说明，不要把未检查部分理解成安全。", Palette.GrayTint, Palette.Gray, "…");
+                ApplyHero("覆盖不足", "体检没有完整覆盖所有项目", "当前仅完成权限允许范围内的检查，未检查部分不能视为安全。", Palette.GrayTint, Palette.Gray, "…");
                 break;
         }
 
@@ -239,7 +239,7 @@ public partial class MainWindow : Window
             ResultsPanel.Visibility = Visibility.Collapsed;
             EmptyResultsPanel.Visibility = Visibility.Visible;
             EmptyResultsTitleText.Text = "没有异常证据需要展开";
-            EmptyResultsDescriptionText.Text = "请同时查看上方检查卡与覆盖限制。如果你看到可疑红信，仍建议使用“红信判真伪”交叉核对。";
+            EmptyResultsDescriptionText.Text = "请同时查看上方检查卡与覆盖限制，如果你看到可疑红信，仍建议使用“红信判真伪”交叉核对。";
         }
         else
         {
@@ -335,7 +335,7 @@ public partial class MainWindow : Window
                 UrlSummaryEyebrow.Foreground = Palette.Gray;
                 break;
         }
-        FooterStatusText.Text = "链接仅在本地完成解析 · 未联网、未打开";
+        FooterStatusText.Text = "链接仅在本地完成解析";
     }
 
     private void ClearUrl_Click(object sender, RoutedEventArgs e)
@@ -343,8 +343,8 @@ public partial class MainWindow : Window
         UrlInputTextBox.Clear();
         UrlResults.Clear();
         UrlSummaryEyebrow.Text = "等待检查";
-        UrlSummaryText.Text = "实际主机会在这里显示";
-        UrlSummaryNoteText.Text = "官方客服主机应为 help.steampowered.com，看起来相似的前缀、@ 符号或多一级后缀都不算。";
+        UrlSummaryText.Text = "实际主机";
+        UrlSummaryNoteText.Text = "Steam 官方客服主机应为 help.steampowered.com，任何多余字符都可能意味着风险。本工具的信息可能随 Steam 更新而过时，请以 Steam 官方信息为准。";
         UrlSummaryBorder.Background = Palette.GrayTint;
         UrlSummaryBorder.BorderBrush = Palette.Gray;
     }
@@ -359,7 +359,7 @@ public partial class MainWindow : Window
         }
         else if (SyncYesRadio.IsChecked == true)
         {
-            CloudSyncGuidanceText.Text = "跨设备可见更符合云端通知，但仍必须核对“联系客服”链接的实际主机，且 Steam 客服不会要求二维码小额付款验证。";
+            CloudSyncGuidanceText.Text = "跨设备可见更符合云端通知，但仍需核对“联系客服”链接的实际主机。Steam 客服不会要求通过二维码小额付款进行验证。";
             CloudSyncGuidanceText.Background = Palette.GreenTint;
         }
         else
@@ -370,9 +370,6 @@ public partial class MainWindow : Window
     }
 
     private void CopyOfficialSupport_Click(object sender, RoutedEventArgs e) => CopyText(ProductInfo.OfficialSupportUrl, "官方客服地址已复制");
-
-    private void CopyHandoff_Click(object sender, RoutedEventArgs e) =>
-        CopyText(ProfessionalHandoff.BuildChecklist(_lastReport), "交接清单已复制，可粘贴给安全人员或保存到记事本");
 
     private void OpenWindowsSecurity_Click(object sender, RoutedEventArgs e) => OpenTrustedTarget("windowsdefender:", "无法打开 Windows 安全中心");
     private void OpenOfficialSupport_Click(object sender, RoutedEventArgs e) => OpenTrustedTarget(ProductInfo.OfficialSupportUrl, "无法打开 Steam 官方客服");

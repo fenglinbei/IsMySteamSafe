@@ -26,7 +26,7 @@ public static class FileUtilities
         FileInfo info = new(path);
         if (info.Length > maximumBytes)
         {
-            throw new IOException($"文件超过只读分析上限（{maximumBytes / 1024 / 1024} MiB）。");
+            throw new IOException($"文件超过只读检查上限（{maximumBytes / 1024 / 1024} MiB）。");
         }
 
         await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,

@@ -5,8 +5,8 @@ namespace IsMySteamSafe.Core.Models;
 public static class ProductInfo
 {
     public const string Name = "我的 Steam 安全吗？";
-    public const string Version = "0.2.2";
-    public const string Edition = "v0.2.2 EVIDENCE";
+    public const string Version = "0.2.4";
+    public const string Edition = "v0.2.4";
     public const string OfficialSupportUrl = "https://help.steampowered.com/";
     public const string OfficialInstallerUrl = "https://store.steampowered.com/about/";
 }
@@ -135,11 +135,11 @@ public static class AuditLabels
     public static string Level(AuditLevel level) => level switch
     {
         AuditLevel.Passed => "未见异常",
-        AuditLevel.Information => "客观信息",
+        AuditLevel.Information => "信息",
         AuditLevel.NeedsReview => "需要核对",
         AuditLevel.HighlySuspicious => "高度可疑",
-        AuditLevel.ConfirmedTampering => "明确篡改信号",
-        _ => "未完整检查"
+        AuditLevel.ConfirmedTampering => "发现明显篡改",
+        _ => "检查不完整"
     };
 
     public static string Conclusion(AuditConclusion conclusion) => conclusion switch
@@ -147,8 +147,8 @@ public static class AuditLabels
         AuditConclusion.NoTamperingFound => "未发现 Steam 客户端篡改迹象",
         AuditConclusion.ReviewNeeded => "有几项需要你核对",
         AuditConclusion.StrongTamperingSignal => "发现强篡改信号",
-        AuditConclusion.Incomplete => "体检未完整完成",
-        _ => "还没有开始体检"
+        AuditConclusion.Incomplete => "体检未完成",
+        _ => "待检查"
     };
 
     public static string Priority(AuditPriority priority) => priority switch
