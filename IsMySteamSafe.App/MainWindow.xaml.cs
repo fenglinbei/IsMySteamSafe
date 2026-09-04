@@ -24,6 +24,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ScopeDescriptionText.Text = AuditCoverage.Scope;
+        ScopeLimitsText.Text = AuditCoverage.Limits;
         CheckCards = [];
         Findings = [];
         UrlResults = [];
@@ -141,9 +143,10 @@ public partial class MainWindow : Window
             }
 
             IReadOnlyList<string> roots = _additionalEvidenceRoot is null ? Array.Empty<string>() : [_additionalEvidenceRoot];
+            EvidenceBundleOptions evidenceOptions = new(roots) { IncludeRunHistory = EvidenceHistoryCheckBox.IsChecked == true };
             Progress<EvidenceProgress> progress = new(UpdateEvidenceProgress);
             EvidenceExportResult result = await Task.Run(
-                () => EvidenceBundleExporter.ExportAsync(report, new EvidenceBundleOptions(roots), dialog.FileName, progress, token),
+                () => EvidenceBundleExporter.ExportAsync(report, evidenceOptions, dialog.FileName, progress, token),
                 token);
             EvidenceProgressBar.Value = 100;
             EvidencePercentText.Text = "100%";
@@ -199,6 +202,10 @@ public partial class MainWindow : Window
 
     private void PopulateReport(AuditReport report)
     {
+        CoverageSummaryText.Text = report.CoverageSummary;
+        ScopeDescriptionText.Text = AuditCoverage.Scope;
+        ScopeLimitsText.Text = AuditCoverage.Limits;
+        CoverageGroupsControl.ItemsSource = AuditCoverage.Groups(report);
         CheckCards.Clear();
         foreach (AuditCheckResult check in report.Checks) CheckCards.Add(new CheckCardViewModel { Check = check });
 
@@ -211,17 +218,18 @@ public partial class MainWindow : Window
         }
 
         ExportButton.IsEnabled = true;
+        CompareButton.IsEnabled = true;
         AuditProgressBar.Value = 100;
         ProgressPercentText.Text = "100%";
         ProgressStageText.Text = "体检完成";
-        ProgressDetailText.Text = $"{report.Checks.Count} 项检查 · {report.Findings.Count} 条证据/提示 · {report.CoverageNotes.Count} 条覆盖说明";
+        ProgressDetailText.Text = $"{report.Checks.Count} 项检查 · {report.Findings.Count} 条证据或提示 · 未检查内容另列";
         FooterStatusText.Text = $"体检完成 · {AuditLabels.Conclusion(report.Conclusion)}";
-        SteamPathText.Text = report.SteamRoots.Count == 0 ? "未找到 Steam" : $"Steam：{string.Join("；", report.SteamRoots)}";
+        SteamPathText.Text = report.SteamRoots.Count == 0 ? "未找到 Steam" : $"Steam：{string.Join("，", report.SteamRoots)}";
 
         switch (report.Conclusion)
         {
             case AuditConclusion.NoTamperingFound:
-                ApplyHero("本次结论", "未发现 Steam 客户端篡改迹象", "当前未检测到可疑事项，但不保证已完全安全", Palette.GreenTint, Palette.Green, "✓");
+                ApplyHero("快速体检已完成", "未发现 Steam 客户端篡改迹象", "结论仅适用于已完成的检查。工坊、MOD 与压缩内容可能尚未深查，请查看下方检查范围。", Palette.GreenTint, Palette.Green, "✓");
                 break;
             case AuditConclusion.ReviewNeeded:
                 ApplyHero("本次结论", "有几项需要你核对", "先确认是否来自你主动安装的客户端插件，若为不认识的项目请交给专业杀毒软件辨别。", Palette.AmberTint, Palette.Amber, "!");
@@ -229,8 +237,17 @@ public partial class MainWindow : Window
             case AuditConclusion.StrongTamperingSignal:
                 ApplyHero("请先停止操作", "发现强篡改信号", "不要付款、扫码或立刻改密码。先断网并交给专业杀毒软件全盘查杀。", Palette.RedTint, Palette.Red, "!");
                 break;
+            case AuditConclusion.ContentRiskFound:
+                ApplyHero("请先不要打开可疑内容", "发现有风险的内容文件", "文件存在不等于已经运行，也不等于 Steam 已被篡改。请核对来源并隔离，未展开内容仍需进一步检查。", Palette.RedTint, Palette.Red, "!");
+                break;
+            case AuditConclusion.PersistenceRiskFound:
+                ApplyHero("请先停止操作", "发现关联恶意文件的启动链", "启动入口指向已知恶意文件，不等于当前正在运行。请处理入口和文件，再重启复查。", Palette.RedTint, Palette.Red, "!");
+                break;
+            case AuditConclusion.ActiveThreatFound:
+                ApplyHero("请先停止操作", "发现正在运行的恶意组件", "先处理本机威胁，再从可信设备更换凭据并撤销其他会话。正常游戏可能只是加载了恶意 MOD。", Palette.RedTint, Palette.Red, "!");
+                break;
             default:
-                ApplyHero("覆盖不足", "体检没有完整覆盖所有项目", "当前仅完成权限允许范围内的检查，未检查部分不能视为安全。", Palette.GrayTint, Palette.Gray, "…");
+                ApplyHero("快速体检已结束", "部分检查缺失，暂不能充分判断", "有检查未能完成，请展开“检查范围与未检查内容”查看具体原因。未检查部分不能视为安全。", Palette.GrayTint, Palette.Gray, "…");
                 break;
         }
 
@@ -247,6 +264,26 @@ public partial class MainWindow : Window
             ResultsPanel.Visibility = Visibility.Visible;
             FindingsList.SelectedIndex = 0;
         }
+    }
+
+    private async void Compare_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _lastReport is null) return;
+        OpenFileDialog dialog = new() { Title = "选择上一次导出的 JSON 体检报告", Filter = "JSON 体检报告 (*.json)|*.json", CheckFileExists = true };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            SetBusy(true);
+            if (!ContentDiscovery.IsLocalSafePath(dialog.FileName)) throw new IOException("仅支持安全的本地报告路径。");
+            string json = await IsMySteamSafe.Core.Utilities.FileUtilities.ReadTextBoundedAsync(dialog.FileName, 16 * 1024 * 1024);
+            AuditReport before = System.Text.Json.JsonSerializer.Deserialize<AuditReport>(json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new IOException("报告内容无效。");
+            AuditComparison comparison = AuditComparison.Compare(before, _lastReport);
+            MessageBox.Show(this, comparison.Summary, "两次体检对比", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, ex.Message, "无法对比报告", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { SetBusy(false); }
     }
 
     private void ApplyHero(string eyebrow, string title, string description, Brush tint, Brush accent, string glyph)
@@ -406,6 +443,8 @@ public partial class MainWindow : Window
         StartAuditButton.IsEnabled = !busy;
         CancelAuditButton.IsEnabled = busy;
         ExportButton.IsEnabled = !busy && _lastReport is not null;
+        CompareButton.IsEnabled = !busy && _lastReport is not null;
+        EvidenceHistoryCheckBox.IsEnabled = !busy;
         ClientModsCheckBox.IsEnabled = !busy;
         EvidenceExportButton.IsEnabled = !busy;
         EvidenceCancelButton.IsEnabled = busy;

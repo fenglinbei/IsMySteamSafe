@@ -8,13 +8,14 @@ using IsMySteamSafe.Core.Utilities;
 
 namespace IsMySteamSafe.SelfTest;
 
-internal static class Program
+internal static partial class Program
 {
     private static int _passed;
     private static int _failed;
 
     private static async Task<int> Main(string[] args)
     {
+        if (args is ["--render-ui", string output]) return UiPreview.Render(output);
         if (args is ["--analyze-script", string path])
         {
             string text = await FileUtilities.ReadTextBoundedAsync(Path.GetFullPath(path));
@@ -69,7 +70,10 @@ internal static class Program
             ("installed Steam has Valve signature", () => Sync(TestInstalledSteamSignature)),
             ("report exporters", TestReportExportAsync),
             ("read-only evidence bundle exporter", TestEvidenceBundleExportAsync),
-            ("live audit completes", TestLiveAuditAsync)
+            ("live audit completes", TestLiveAuditAsync),
+            ("all-AppID content evidence and comparison", TestExpandedContentAsync),
+            ("expanded privacy and opt-in boundaries", () => Sync(TestExpandedPrivacy)),
+            ("quick coverage, real read failures and media boundaries", TestQuickCoverageAsync)
         ];
 
         foreach ((string name, Func<Task> test) in tests)

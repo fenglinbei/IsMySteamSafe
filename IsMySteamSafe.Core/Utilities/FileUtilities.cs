@@ -65,7 +65,8 @@ public static class FileUtilities
             redacted = redacted.Replace($"C:\\\\Users\\\\{userName}", "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);
         }
         redacted = SteamIdRegex.Replace(redacted, "[STEAM_ID_REDACTED]");
-        return SensitiveQueryRegex.Replace(redacted, match => match.Groups["prefix"].Value + "[REDACTED]");
+        redacted = SensitiveQueryRegex.Replace(redacted, match => match.Groups["prefix"].Value + "[REDACTED]");
+        return Inspection.ScriptSignals.RedactSecrets(redacted);
     }
 
     public static bool IsWithin(string candidate, string root)

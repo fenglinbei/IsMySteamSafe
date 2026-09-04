@@ -3,4 +3,7 @@
     <AssemblyName>IsMySteamSafe.Core</AssemblyName>
     <RootNamespace>IsMySteamSafe.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Inspection\known-content.json" />
+  </ItemGroup>
 </Project>

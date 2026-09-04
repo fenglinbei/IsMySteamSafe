@@ -7,7 +7,7 @@ $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $workspaceRoot = (Resolve-Path -LiteralPath (Join-Path $projectRoot '..\..')).Path
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $workspaceRoot 'outputs' }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
-$version = '0.2.4'
+$version = '0.2.6'
 $packageName = "IsMySteamSafe-$version-win-x64"
 $packageDir = Join-Path $OutputRoot $packageName
 $binaryZip = Join-Path $OutputRoot "$packageName.zip"
@@ -58,7 +58,7 @@ $manifest = Get-ChildItem -LiteralPath $packageDir -Recurse -File | Sort-Object 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [IO.Compression.ZipFile]::CreateFromDirectory($packageDir,$binaryZip,[IO.Compression.CompressionLevel]::Optimal,$true)
 Get-ChildItem -LiteralPath $projectRoot -Recurse -Force -File | Where-Object {
-    $_.FullName -notmatch '[\\/](bin|obj|\.git)[\\/]' -and $_.Extension -notin @('.pfx','.p12','.key')
+    $_.FullName -notmatch '[\\/](bin|obj|artifacts|\.git)[\\/]' -and $_.Extension -notin @('.pfx','.p12','.key')
 } | ForEach-Object {
     Assert-ChildPath $_.FullName $projectRoot
     $destination = Join-Path $sourceStage $_.FullName.Substring($projectRoot.Length).TrimStart('\')

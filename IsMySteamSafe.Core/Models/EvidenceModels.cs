@@ -6,6 +6,7 @@ public sealed record EvidenceExportResult(string Path, string Sha256, long Size,
 
 public sealed record EvidenceBundleOptions(IReadOnlyList<string> AdditionalRoots)
 {
+    public bool IncludeRunHistory { get; init; }
     public static EvidenceBundleOptions Default { get; } = new(Array.Empty<string>());
 }
 

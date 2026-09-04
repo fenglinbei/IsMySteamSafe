@@ -1,10 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <UseWPF>true</UseWPF>
     <AssemblyName>IsMySteamSafe.SelfTest</AssemblyName>
     <RootNamespace>IsMySteamSafe.SelfTest</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Using Include="System.IO" />
     <ProjectReference Include="..\IsMySteamSafe.Core\IsMySteamSafe.Core.csproj" />
+    <ProjectReference Include="..\IsMySteamSafe.App\IsMySteamSafe.App.csproj" />
   </ItemGroup>
 </Project>

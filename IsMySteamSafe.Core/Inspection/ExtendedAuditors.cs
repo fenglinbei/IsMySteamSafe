@@ -42,7 +42,7 @@ public static class ProcessModuleAuditor
                     {
                         Id = "P1.PROCESS.WALLPAPER_CONTENT",
                         Priority = AuditPriority.P1,
-                        Level = unsignedOrInvalid ? AuditLevel.HighlySuspicious : AuditLevel.NeedsReview,
+                        Level = AuditLevel.NeedsReview,
                         Area = AuditArea.RunningProcesses,
                         Title = unsignedOrInvalid
                             ? "Wallpaper 内容目录中的未签名程序正在运行"
@@ -416,15 +416,17 @@ public static class WorkshopSourceObserver
     {
         List<WallpaperProject> projects = [];
         int errors = 0;
+        int allProjects = 0;
+        List<string> notes = [];
         foreach (string root in layout.WorkshopRoots)
         {
-            IEnumerable<string> directories;
-            try { directories = Directory.EnumerateDirectories(root).Take(20_000); }
-            catch { errors++; continue; }
+            IEnumerable<string> directories = ContentDiscovery.Children(root, true, notes, 20_000);
             foreach (string directory in directories)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                projects.Add(SteamLocator.ReadWallpaperProject(directory));
+                if (!ContentDiscovery.IsNumericId(Path.GetFileName(directory))) continue;
+                if (ContentDiscovery.WorkshopAppId(root) == "431960") projects.Add(SteamLocator.ReadWallpaperProject(directory));
+                allProjects++;
                 report.Metrics.WorkshopItemsObserved++;
             }
         }
@@ -433,10 +435,11 @@ public static class WorkshopSourceObserver
             .Where(item => item.Type?.Equals("application", StringComparison.OrdinalIgnoreCase) == true)
             .OrderByDescending(item => item.LastWriteTime)
             .ToList();
-        if (projects.Count > 0)
+        if (allProjects > 0)
         {
             List<EvidenceItem> evidence =
             [
+                new("全部 Steam 工坊项目", allProjects.ToString("N0")),
                 new("Wallpaper Engine 工坊项目", projects.Count.ToString("N0")),
                 new("其中应用程序壁纸", applications.Count.ToString("N0"))
             ];
@@ -453,26 +456,27 @@ public static class WorkshopSourceObserver
                 Level = AuditLevel.Information,
                 Area = AuditArea.ContentSources,
                 Title = "创意工坊内容来源概览",
-                WhatFound = $"发现 {projects.Count:N0} 个 Wallpaper Engine 工坊项目，其中 {applications.Count:N0} 个声明为应用程序壁纸。",
+                WhatFound = $"发现 {allProjects:N0} 个 Steam 工坊项目，其中 {projects.Count:N0} 个属于 Wallpaper Engine，{applications.Count:N0} 个声明为应用程序壁纸。",
                 Meaning = "应用程序壁纸可以包含可执行内容，但存在此类内容不等于中毒。本项只帮助定位来源，不参与篡改结论。",
                 Recommendation = "若专业杀毒软件报告了具体文件，请根据工坊 ID 核对来源，不要批量删除正常壁纸。",
                 Target = layout.WorkshopRoots.FirstOrDefault(),
                 Evidence = evidence
             });
         }
-        if (errors > 0) report.CoverageNotes.Add($"有 {errors} 个 Wallpaper Engine 工坊目录无法枚举。");
+        errors += notes.Count;
+        report.CoverageNotes.AddRange(notes);
 
         return new AuditCheckResult
         {
             Id = "content-sources",
             Priority = AuditPriority.P2,
             Area = AuditArea.ContentSources,
-            Name = "内容来源（不判毒）",
-            Level = projects.Count > 0 ? AuditLevel.Information : errors > 0 ? AuditLevel.Incomplete : AuditLevel.Passed,
-            Summary = projects.Count > 0
-                ? $"仅列出 {projects.Count:N0} 个项目的类型与近期变更，不读取压缩包、不执行内容。"
-                : "未发现 Wallpaper Engine 工坊项目，或当前未安装该内容。",
-            EvidenceCount = projects.Count > 0 ? 1 : 0
+            Name = "内容来源概览",
+            Level = errors > 0 ? AuditLevel.Incomplete : allProjects > 0 ? AuditLevel.Information : AuditLevel.Passed,
+            Summary = allProjects > 0
+                ? $"发现 {allProjects:N0} 个项目，覆盖 {layout.WorkshopRoots.Select(ContentDiscovery.WorkshopAppId).Distinct().Count()} 个 AppID，本卡仅整理来源。"
+                : "未发现本地 Steam 工坊项目。",
+            EvidenceCount = allProjects > 0 ? 1 : 0
         };
     }
 }

@@ -26,7 +26,7 @@ public static class ReportExporter
         await File.WriteAllTextAsync(fullPath, BuildMarkdown(report), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), cancellationToken);
     }
 
-    public static string BuildJson(AuditReport report) => JsonSerializer.Serialize(report, JsonOptions);
+    public static string BuildJson(AuditReport report) => JsonRedaction.Redact(JsonSerializer.Serialize(report, JsonOptions));
 
     public static string BuildMarkdown(AuditReport report)
     {
@@ -38,6 +38,10 @@ public static class ReportExporter
         text.AppendLine($"- 开始时间：{report.StartedAt:yyyy-MM-dd HH:mm:ss zzz}");
         text.AppendLine($"- 完成时间：{report.CompletedAt:yyyy-MM-dd HH:mm:ss zzz}");
         text.AppendLine($"- 结论：**{AuditLabels.Conclusion(report.Conclusion)}**");
+        text.AppendLine($"- 执行状态：{report.ExecutionStatus}");
+        text.AppendLine($"- 覆盖说明：{report.CoverageSummary}");
+        text.AppendLine($"- 检查范围：{AuditCoverage.Scope}");
+        text.AppendLine($"- 内容阶段边界：{AuditCoverage.Limits}");
         text.AppendLine();
         text.AppendLine("> 本工具仅检查 Steam 是否出现已支持的篡改状态，不提供杀毒功能，“未发现异常”不代表系统绝对安全。");
         text.AppendLine();
@@ -52,6 +56,8 @@ public static class ReportExporter
 
         text.AppendLine();
         text.AppendLine("## 证据");
+        text.AppendLine();
+        foreach (string source in report.ContentSources.Distinct()) text.AppendLine("- 内容来源：" + Escape(source));
         text.AppendLine();
         if (report.Findings.Count == 0)
         {
@@ -73,6 +79,20 @@ public static class ReportExporter
             }
         }
 
+        if (report.ContentLimitations.Count > 0)
+        {
+            text.AppendLine("## 未深查内容与补查方式");
+            text.AppendLine();
+            foreach (var group in report.ContentLimitations.GroupBy(i => (i.Kind, i.NextStep)))
+            {
+                text.AppendLine($"### {Escape(group.Key.Kind)} · {group.Count()} 条记录");
+                text.AppendLine();
+                text.AppendLine(Escape(group.Key.NextStep));
+                text.AppendLine();
+                foreach (var item in group) text.AppendLine($"- {Escape(item.Target)}：{Escape(item.Detail)}");
+                text.AppendLine();
+            }
+        }
         if (report.CoverageNotes.Count > 0)
         {
             text.AppendLine("## 覆盖限制");
@@ -92,7 +112,7 @@ public static class ReportExporter
         text.AppendLine($"Steam 官方客服：{ProductInfo.OfficialSupportUrl}");
         text.AppendLine($"Steam 官方安装页：{ProductInfo.OfficialInstallerUrl}");
 
-        return text.ToString();
+        return Utilities.FileUtilities.RedactSensitiveText(text.ToString());
     }
 
     private static string PreparePath(string path)

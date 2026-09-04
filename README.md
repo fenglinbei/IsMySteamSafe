@@ -4,21 +4,24 @@
 
 > 不是杀毒软件，而是一个回答“我的 Steam 到底被没被动过手脚”的本地审计工具。
 
-当前版本：**v0.2.4**。提供当前用户安装包和便携包，保留客户端检查与只读取证能力。签名类型以包内 `SIGNING.txt` 为准，自签名构建不等于公开受信任的发布者签名。
+当前版本：**v0.2.6**。提供当前用户安装包和便携包，保留客户端检查与只读取证能力。签名类型以包内 `SIGNING.txt` 为准，自签名构建不等于公开受信任的发布者签名。
 
-使用 `IsMySteamSafe-0.2.4-setup.exe` 安装，默认目录为当前用户的 `%LOCALAPPDATA%\Programs\IsMySteamSafe`，不要求管理员权限。卸载只移除程序和快捷方式，不删除另行保存的报告与证据包。源码、程序、安装器和卸载器分别打包验证，签名及信任说明见 [SIGNING.md](docs/SIGNING.md)。
+使用 `IsMySteamSafe-0.2.6-setup.exe` 安装，默认目录为当前用户的 `%LOCALAPPDATA%\Programs\IsMySteamSafe`，不要求管理员权限。卸载只移除程序和快捷方式，不删除另行保存的报告与证据包。源码、程序、安装器和卸载器分别打包验证，签名及信任说明见 [SIGNING.md](docs/SIGNING.md)。
 
 ## 它会做什么
 
-后续规划：[扩展至本机所有 Steam 创意工坊](docs/ROADMAP.md)。当前只自动关联 Wallpaper Engine 工坊，下一阶段覆盖所有游戏的本地项目，仍保持快速、只读、不查杀。图标来源与重建方式见 [ICONS.md](docs/ICONS.md)。
+已加入本地全 AppID 工坊、MOD 与插件的轻量检查，范围与验收见 [COVERAGE-0.2.6.md](docs/COVERAGE-0.2.6.md)，后续事项见 [ROADMAP.md](docs/ROADMAP.md)。图标来源与重建方式见 [ICONS.md](docs/ICONS.md)。
 
 - 检查 Steam 客户端敏感目录中的 `version.dll`、`versionOrg.dll`、`msacm32.drv` 与 `wsock32.dll`，验证数字签名并记录 SHA-256。
 - 检查 steamui 中与客服告警、游戏启动、隐藏地址栏和客服路由有关的语义级篡改迹象，支持局部变量间接路由。
 - 检查 `steam.cfg` 是否成对抑制 Steam 自更新。
 - 只读枚举 Steam 相关进程模块，以及 Run、IFEO、SilentProcessExit 等启动链配置。
-- 关联所有 Steam 库中的 Wallpaper Engine Workshop 路径，发现其中正在运行的程序，以及指向这些路径的 Windows 启动项。未签名运行映像或 Workshop 自启动会提升为高度可疑。
+- 关联所有 Steam 库的工坊 AppID、已适配 MOD 与 Steam 插件目录，对关键小文件核对已知内容规则和可疑脚本组合。单凭普通 MOD 的 DLL、脚本、未签名程序或缺少 project.json 不判病毒。
+- 区分文件存在、已知恶意文件启动链、模块运行关联与 Steam 篡改，未展开归档明确标记内部未检查。
 - 客观显示系统代理状态，本地 Clash 等代理本身不参与风险结论。
-- 只列出 Wallpaper Engine 工坊项目类型与近期变化，不把“存在应用程序壁纸”判为中毒。
+- 列出全部工坊的项目数量与 AppID，Wallpaper 单独展示项目类型，不把“存在应用程序壁纸”判为中毒。
+- 新增上次 JSON 报告对比，未再观察到不等于彻底清除。内容检查上限为 5000 条目、256 MiB、单文件 64 MiB、遍历约 12 秒，后续关联检查与客户端审计另计，不保证总耗时不超过 12 秒。
+- 取证时可勾选运行历史摘要，不导出完整运行命令。报告与证据包脱敏 URL 查询参数、常见秘密字段、用户名路径和 SteamID，分享前仍应人工检查。
 - 在本地解析用户粘贴的客服链接，显示真正主机，不会打开链接或进行 DNS 查询。
 - 导出 Markdown/JSON 体检报告，并生成可交给专业杀毒软件的核对清单。
 - 无需 CMD/PowerShell 生成只读取证 ZIP，包括进程树、相关模块、当前 IPv4 TCP、启动链、服务、任务、代理/DNS、证书元数据和关键文件哈希，同时记录多库/Workshop 根，并为正在运行的 Wallpaper 内容程序计算哈希。

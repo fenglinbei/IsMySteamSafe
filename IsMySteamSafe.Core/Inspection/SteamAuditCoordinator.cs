@@ -14,6 +14,7 @@ public sealed class SteamAuditCoordinator
         progress?.Report(new AuditProgress(4, "定位 Steam", "仅检查注册表和常见安装位置"));
         SteamLayout layout = SteamLocator.Discover();
         report.SteamRoots.AddRange(layout.SteamRoots);
+        report.CoverageNotes.AddRange(layout.DiscoveryNotes);
 
         if (layout.SteamRoots.Count == 0)
         {
@@ -77,8 +78,23 @@ public sealed class SteamAuditCoordinator
             report.Checks.Add(NetworkConfigurationAuditor.Audit(report));
 
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new AuditProgress(88, "整理内容来源", "仅列出 Wallpaper Engine 项目类型和近期变化"));
+            progress?.Report(new AuditProgress(88, "检查内容来源", "检查所有本地工坊 AppID、MOD 与插件，不解压或执行内容"));
             report.Checks.Add(WorkshopSourceObserver.Observe(layout, report, cancellationToken));
+            report.Checks.Add(await LightContentAuditor.AuditAsync(layout, report, cancellationToken));
+            foreach (string path in WallpaperUiInspector.CandidateFiles(layout))
+            {
+                try
+                {
+                    if (!ContentDiscovery.IsLocalSafePath(path)) throw new IOException("路径不安全");
+                    string text = await Utilities.FileUtilities.ReadTextBoundedAsync(path, cancellationToken: cancellationToken);
+                    if (!WallpaperUiInspector.HasCombinedSuppression(text)) continue;
+                    report.Findings.Add(new AuditFinding { Id = "CONTENT.WALLPAPER.REPORT", Priority = AuditPriority.P1,
+                        Level = AuditLevel.NeedsReview, Area = AuditArea.ContentSources, Title = "Wallpaper 举报入口存在组合隐藏信号", Target = path,
+                        WhatFound = "举报能力被强制关闭，同时出现举报界面隐藏逻辑。", Meaning = "这是界面修改线索，需核对主动安装的插件，不单凭此项判定 Steam 感染。",
+                        Recommendation = "先处理活动威胁，再在 Steam 中验证 Wallpaper Engine 文件完整性，必要时从官方渠道重新安装。" });
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { report.CoverageNotes.Add("Wallpaper 界面未能完整检查：" + path); }
+            }
         }
 
         progress?.Report(new AuditProgress(96, "生成结论", "整理证据与覆盖限制"));
@@ -99,7 +115,7 @@ public sealed class SteamAuditCoordinator
             Area = strongest.Area,
             Name = strongest.Name,
             Level = strongest.Level,
-            Summary = checks.Count == 1 ? strongest.Summary : $"检查了 {checks.Count} 个 Steam 安装：{string.Join("；", checks.Select(item => item.Summary))}",
+            Summary = checks.Count == 1 ? strongest.Summary : $"检查了 {checks.Count} 个 Steam 安装：{string.Join("，", checks.Select(item => item.Summary))}",
             EvidenceCount = checks.Sum(item => item.EvidenceCount)
         };
     }

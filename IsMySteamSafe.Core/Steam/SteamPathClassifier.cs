@@ -7,16 +7,19 @@ public static class SteamPathClassifier
     public static bool IsWallpaperContentPath(SteamLayout layout, string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
-        return layout.WorkshopRoots.Any(root => FileUtilities.IsWithin(path, root)) ||
+        return layout.WorkshopRoots.Where(root => ContentDiscovery.WorkshopAppId(root) == "431960").Any(root => FileUtilities.IsWithin(path, root)) ||
                layout.WallpaperProjectRoots.Any(root => FileUtilities.IsWithin(path, root));
     }
 
     public static bool CommandReferencesWallpaperContent(SteamLayout layout, string command) =>
-        CommandReferencesAnyRoot(command, layout.WorkshopRoots) ||
+        CommandReferencesAnyRoot(command, layout.WorkshopRoots.Where(root => ContentDiscovery.WorkshopAppId(root) == "431960")) ||
         CommandReferencesAnyRoot(command, layout.WallpaperProjectRoots);
 
     public static bool CommandReferencesSteamInstallation(SteamLayout layout, string command) =>
         CommandReferencesAnyRoot(command, layout.SteamRoots);
+
+    public static bool IsSteamContentPath(SteamLayout layout, string? path) => !string.IsNullOrWhiteSpace(path) &&
+        (layout.ContentRoots.Any(root => FileUtilities.IsWithin(path, root.Path)) || IsWallpaperContentPath(layout, path));
 
     private static bool CommandReferencesAnyRoot(string command, IEnumerable<string> roots)
     {

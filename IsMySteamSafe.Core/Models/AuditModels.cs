@@ -5,8 +5,8 @@ namespace IsMySteamSafe.Core.Models;
 public static class ProductInfo
 {
     public const string Name = "我的 Steam 安全吗？";
-    public const string Version = "0.2.4";
-    public const string Edition = "v0.2.4";
+    public const string Version = "0.2.6";
+    public const string Edition = "v0.2.6";
     public const string OfficialSupportUrl = "https://help.steampowered.com/";
     public const string OfficialInstallerUrl = "https://store.steampowered.com/about/";
 }
@@ -50,7 +50,10 @@ public enum AuditConclusion
     NoTamperingFound,
     ReviewNeeded,
     StrongTamperingSignal,
-    Incomplete
+    Incomplete,
+    ContentRiskFound,
+    ActiveThreatFound,
+    PersistenceRiskFound
 }
 
 public sealed record EvidenceItem(string Name, string Value);
@@ -66,6 +69,7 @@ public sealed class AuditFinding
     public required string Meaning { get; init; }
     public required string Recommendation { get; init; }
     public string? Target { get; init; }
+    public string? EvidenceState { get; init; }
     public List<EvidenceItem> Evidence { get; init; } = [];
 }
 
@@ -100,16 +104,35 @@ public sealed class AuditReport
     public DateTimeOffset? CompletedAt { get; set; }
     public AuditConclusion Conclusion { get; set; } = AuditConclusion.NotRun;
     public List<string> SteamRoots { get; init; } = [];
+    public List<string> ContentSources { get; init; } = [];
     public List<AuditCheckResult> Checks { get; init; } = [];
     public List<AuditFinding> Findings { get; init; } = [];
     public List<string> CoverageNotes { get; init; } = [];
+    public List<ContentCoverageItem> ContentLimitations { get; init; } = [];
+    public string ExecutionStatus => CompletedAt is null ? "尚未结束" : "快速体检已完成";
+    public string ScopeDescription => AuditCoverage.Scope;
+    public string CoverageSummary => Checks.Any(c => c.Level == AuditLevel.Incomplete) || ContentLimitations.Any(c => c.ReadFailed)
+        ? "有检查未能完成，请查看原因" : ContentLimitations.Count > 0
+            ? "快速检查范围已完成，部分内容尚未深查" : "已完成本次支持范围内的检查";
     public AuditMetrics Metrics { get; init; } = new();
 
     public void RecalculateConclusion()
     {
-        if (Findings.Any(item => item.Level is AuditLevel.ConfirmedTampering or AuditLevel.HighlySuspicious))
+        if (Findings.Any(item => item.EvidenceState == "active-malware"))
+        {
+            Conclusion = AuditConclusion.ActiveThreatFound;
+        }
+        else if (Findings.Any(item => item.Area != AuditArea.ContentSources && item.EvidenceState != "persistence-present" && item.Level is AuditLevel.ConfirmedTampering or AuditLevel.HighlySuspicious))
         {
             Conclusion = AuditConclusion.StrongTamperingSignal;
+        }
+        else if (Findings.Any(item => item.EvidenceState == "persistence-present"))
+        {
+            Conclusion = AuditConclusion.PersistenceRiskFound;
+        }
+        else if (Findings.Any(item => item.Area == AuditArea.ContentSources && item.Level == AuditLevel.HighlySuspicious))
+        {
+            Conclusion = AuditConclusion.ContentRiskFound;
         }
         else if (Findings.Any(item => item.Level == AuditLevel.NeedsReview))
         {
@@ -147,7 +170,10 @@ public static class AuditLabels
         AuditConclusion.NoTamperingFound => "未发现 Steam 客户端篡改迹象",
         AuditConclusion.ReviewNeeded => "有几项需要你核对",
         AuditConclusion.StrongTamperingSignal => "发现强篡改信号",
-        AuditConclusion.Incomplete => "体检未完成",
+        AuditConclusion.ContentRiskFound => "发现有风险的内容文件",
+        AuditConclusion.ActiveThreatFound => "发现正在运行的恶意组件",
+        AuditConclusion.PersistenceRiskFound => "发现关联恶意文件的启动链",
+        AuditConclusion.Incomplete => "部分检查缺失，暂不能充分判断",
         _ => "待检查"
     };
 

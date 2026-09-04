@@ -25,7 +25,7 @@ public static class EvidenceBundleExporter
     private const long MaximumHashTotalBytes = 2L * 1024 * 1024 * 1024;
     private const int MaximumAdditionalFiles = 5000;
     private static readonly string[] ExecutableExtensions = [".exe", ".dll", ".sys", ".ocx", ".scr"];
-    private static readonly string[] SmallTextExtensions = [".bat", ".cmd", ".ps1", ".vbs", ".js", ".cfg", ".ini", ".txt"];
+    private static readonly string[] SmallTextExtensions = [".bat", ".cmd", ".ps1", ".vbs", ".js", ".lua", ".cfg", ".ini", ".txt"];
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -65,6 +65,7 @@ public static class EvidenceBundleExporter
                 WriteText(archive, "certificates-metadata.csv", CertificatesCsv(bundle.Certificates));
                 WriteText(archive, "files.csv", FilesCsv(bundle.Files));
                 WriteText(archive, "network-settings.csv", NetworkCsv(bundle.NetworkSettings));
+                if (audit is not null) WriteText(archive, "content-sources.txt", string.Join(Environment.NewLine, audit.ContentSources));
                 WriteText(archive, "text-snapshots.txt", TextSnapshots(bundle.TextSnapshots));
                 if (audit is not null)
                 {
@@ -118,6 +119,7 @@ public static class EvidenceBundleExporter
         progress?.Report(new EvidenceProgress(38, "记录启动链", "读取 Run/RunOnce、Steam IFEO 与 SilentProcessExit"));
         CollectRegistry(bundle);
         CollectServices(bundle);
+        if (options.IncludeRunHistory) CollectRunHistory(bundle);
 
         progress?.Report(new EvidenceProgress(53, "记录计划任务", "读取任务文件元数据、哈希与动作字段"));
         await CollectScheduledTasksAsync(bundle, fileHashBudget, cancellationToken);
@@ -135,8 +137,28 @@ public static class EvidenceBundleExporter
         }
 
         bundle.Coverage.Add(new EvidenceCoverage("样本文件", "未收集", "证据包不会复制 EXE、DLL、压缩包或大型脚本，仅保存路径、元数据、签名、SHA-256 和少量文本配置。"));
-        bundle.Coverage.Add(new EvidenceCoverage("隐私", "已脱敏", "默认脱敏当前用户目录、17 位 SteamID，以及 URL 中的 u= 和 d= 参数。"));
+        bundle.Coverage.Add(new EvidenceCoverage("隐私", "已脱敏", "默认脱敏用户目录、SteamID、URL 查询参数和常见凭据字段，运行历史仅在勾选时输出信号摘要。分享前仍需自行检查文本。"));
         return bundle;
+    }
+
+    private static void CollectRunHistory(EvidenceBundle bundle)
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU");
+            int found = 0;
+            if (key is not null)
+                foreach (string name in key.GetValueNames().Where(name => name.Length == 1).Take(26))
+                {
+                    IReadOnlyList<string> signals = ScriptSignals.Analyze(key.GetValue(name)?.ToString() ?? "");
+                    if (signals.Count == 0) continue;
+                    found++;
+                    bundle.Coverage.Add(new EvidenceCoverage("运行历史 " + name, "可疑信号", string.Join("，", signals)));
+                }
+            bundle.Coverage.Add(new EvidenceCoverage("运行历史", "有限检查", $"发现 {found} 条可疑执行链摘要，未输出完整命令，缺失记录不能证明未执行。"));
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        { bundle.Coverage.Add(new EvidenceCoverage("运行历史", "未完成", "无法读取当前用户记录。")); }
     }
 
     private static EvidenceEnvironment BuildEnvironment(SteamLayout layout)
@@ -219,7 +241,8 @@ public static class EvidenceBundleExporter
                     ? GetSignature(path, signatureCache)
                     : new SignatureResult(SignatureStatus.Error, "路径不可读，未校验签名。", null, false);
                 bool userWritable = path is not null && (FileUtilities.IsWithin(path, profile) || FileUtilities.IsWithin(path, temp));
-                bool wallpaperContentProcess = SteamPathClassifier.IsWallpaperContentPath(layout, path);
+                bool wallpaperContentProcess = SteamPathClassifier.IsSteamContentPath(layout, path) ||
+                    path is not null && layout.Games.Any(game => ContentDiscovery.IsWithin(path, game.Directory));
                 bool steamProcess = name.Equals("steam", StringComparison.OrdinalIgnoreCase) ||
                                     name.Equals("steamwebhelper", StringComparison.OrdinalIgnoreCase);
                 string? hash = null;
@@ -250,7 +273,7 @@ public static class EvidenceBundleExporter
                         bool relevantModule = steamProcess ||
                                               FileUtilities.IsWithin(modulePath, profile) ||
                                               layout.SteamRoots.Any(root => FileUtilities.IsWithin(modulePath, root)) ||
-                                              SteamPathClassifier.IsWallpaperContentPath(layout, modulePath);
+                                              SteamPathClassifier.IsSteamContentPath(layout, modulePath);
                         if (!relevantModule) continue;
                         SignatureResult moduleSignature = GetSignature(modulePath, signatureCache);
                         string? moduleHash = await GetHashAsync(modulePath, hashBudget, hashCache, cancellationToken);
@@ -682,7 +705,7 @@ public static class EvidenceBundleExporter
     {
         ZipArchiveEntry entry = archive.CreateEntry(name, CompressionLevel.Optimal);
         using StreamWriter writer = new(entry.Open(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-        writer.Write(FileUtilities.RedactSensitiveText(content));
+        writer.Write(name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? JsonRedaction.Redact(content) : FileUtilities.RedactSensitiveText(content));
     }
 
     private static string CsvRow(params object?[] values) => string.Join(',', values.Select(value =>
