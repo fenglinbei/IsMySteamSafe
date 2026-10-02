@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.IO.Compression;
+using System.Diagnostics;
 using IsMySteamSafe.Core.Inspection;
 using IsMySteamSafe.Core.Models;
 using IsMySteamSafe.Core.Reporting;
@@ -12,6 +13,8 @@ internal static partial class Program
 {
     private static int _passed;
     private static int _failed;
+    private static readonly List<string> Failures = [];
+    private static bool _installedSteamSignatureChecked;
 
     private static async Task<int> Main(string[] args)
     {
@@ -37,6 +40,15 @@ internal static partial class Program
             Console.WriteLine($"BUNDLE={result.BundleId:N}");
             return 0;
         }
+
+        string? resultsPath = args is ["--results", string destination] ? Path.GetFullPath(destination) : null;
+        bool startupOnly = args is ["--startup-tests"];
+        if (args.Length != 0 && resultsPath is null && !startupOnly)
+        {
+            Console.Error.WriteLine("Unknown SelfTest arguments.");
+            return 2;
+        }
+        Stopwatch elapsed = Stopwatch.StartNew();
 
         List<(string Name, Func<Task> Test)> tests =
         [
@@ -67,7 +79,7 @@ internal static partial class Program
             ("steam cfg update suppression detected", TestSteamCfgAsync),
             ("version forwarder pair is decisive", TestVersionForwarderPairAsync),
             ("acknowledged Millennium loader is review", TestAcknowledgedMillenniumAsync),
-            ("installed Steam has Valve signature", () => Sync(TestInstalledSteamSignature)),
+            ("signature contract and optional installed Steam verification", () => Sync(TestInstalledSteamSignature)),
             ("report exporters", TestReportExportAsync),
             ("read-only evidence bundle exporter", TestEvidenceBundleExportAsync),
             ("live audit completes", TestLiveAuditAsync),
@@ -75,6 +87,15 @@ internal static partial class Program
             ("expanded privacy and opt-in boundaries", () => Sync(TestExpandedPrivacy)),
             ("quick coverage, real read failures and media boundaries", TestQuickCoverageAsync)
         ];
+        if (startupOnly) tests.Clear();
+        tests.AddRange([
+            ("startup host identity and valid readiness protocol", () => Sync(TestStartupProtocol)),
+            ("startup reserved malformed arguments cannot enter business", () => Sync(TestMalformedStartupProtocol)),
+            ("managed native apphost probes are side-effect free", TestRealManagedStartupProbeAsync),
+            ("local error reports preserve diagnostic context and redact secrets", TestLocalErrorReportAsync),
+            ("local error reports are bounded and failures do not recurse", TestLocalErrorReportBoundariesAsync),
+            ("error messages expose local report paths without automatic upload", () => Sync(TestErrorReportMessages))
+        ]);
 
         foreach ((string name, Func<Task> test) in tests)
         {
@@ -87,12 +108,32 @@ internal static partial class Program
             catch (Exception ex)
             {
                 _failed++;
+                Failures.Add(name + ": " + FileUtilities.RedactSensitiveText(ex.ToString()));
                 Console.WriteLine($"FAIL  {name}: {ex.Message}");
             }
         }
 
         Console.WriteLine();
         Console.WriteLine($"RESULT {_passed}/{tests.Count} passed, {_failed} failed");
+        if (resultsPath is not null)
+        {
+            string? parent = Path.GetDirectoryName(resultsPath);
+            if (parent is not null) Directory.CreateDirectory(parent);
+            await File.WriteAllTextAsync(resultsPath, JsonSerializer.Serialize(new
+            {
+                passed = _passed,
+                failed = _failed,
+                skipped = 0,
+                version = StartupCompatibility.Version,
+                buildIdentity = StartupCompatibility.BuildIdentity,
+                elapsedMs = elapsed.ElapsedMilliseconds,
+                installedSteamSignatureChecked = _installedSteamSignatureChecked,
+                coverage = new { installedSteamSignatureChecked = _installedSteamSignatureChecked,
+                    installedSteamSignature = _installedSteamSignatureChecked ? "checked" : "not_applicable_no_installed_steam" },
+                failures = Failures,
+                completedAtUtc = DateTimeOffset.UtcNow
+            }, new JsonSerializerOptions { WriteIndented = true }));
+        }
         return _failed == 0 ? 0 : 1;
     }
 
@@ -230,11 +271,22 @@ internal static partial class Program
 
     private static void TestInstalledSteamSignature()
     {
+        string fixtureDirectory = CreateTempSteam();
+        try
+        {
+            string unsigned = Path.Combine(fixtureDirectory, "unsigned-fixture.exe");
+            File.WriteAllText(unsigned, "Inert unsigned signature fixture, not an executable.");
+            SignatureResult fixture = AuthenticodeVerifier.Verify(unsigned);
+            Assert(fixture.Status == SignatureStatus.Unsigned && !fixture.IsValveSigner,
+                "An unsigned inert file must not be accepted as Valve-signed.");
+        }
+        finally { DeleteOwnTemp(fixtureDirectory); }
         string? root = SteamLocator.Discover().PrimarySteamRoot;
         if (root is null) return;
         string executable = Path.Combine(root, "steam.exe");
         if (!File.Exists(executable)) return;
         SignatureResult signature = AuthenticodeVerifier.Verify(executable);
+        _installedSteamSignatureChecked = true;
         Assert(signature.Status == SignatureStatus.Valid, $"unexpected Steam signature status {signature.Status}: {signature.Detail}");
         Assert(signature.IsValveSigner, $"unexpected Steam signer: {signature.Subject ?? "none"}");
     }

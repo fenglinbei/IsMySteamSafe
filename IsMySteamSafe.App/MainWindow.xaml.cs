@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 using IsMySteamSafe.App.ViewModels;
+using IsMySteamSafe.App.Services;
 using IsMySteamSafe.Core.Inspection;
 using IsMySteamSafe.Core.Models;
 using IsMySteamSafe.Core.Reporting;
@@ -45,8 +46,9 @@ public partial class MainWindow : Window
             SteamLayout layout = await Task.Run(SteamLocator.Discover);
             SteamPathText.Text = layout.PrimarySteamRoot is null ? "未找到 Steam 安装目录" : $"Steam：{layout.PrimarySteamRoot}";
         }
-        catch
+        catch (Exception ex)
         {
+            AppErrorLog.Write("SteamDiscovery", ex);
             SteamPathText.Text = "Steam 位置将在体检时重新确认";
         }
     }
@@ -85,7 +87,7 @@ public partial class MainWindow : Window
         {
             ApplyHero("未完成", "体检遇到错误", "检查出现错误，请保留信息后重试。", Palette.RedTint, Palette.Red, "!");
             FooterStatusText.Text = "体检失败";
-            MessageBox.Show(this, ex.Message, "体检未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+            App.ReportError("Audit", ex, "体检未完成");
         }
         finally
         {
@@ -170,7 +172,7 @@ public partial class MainWindow : Window
             EvidenceStageText.Text = "取证未完成";
             EvidenceDetailText.Text = ex.Message;
             FooterStatusText.Text = "证据提取失败";
-            MessageBox.Show(this, ex.Message, "证据包导出失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            App.ReportError("EvidenceExport", ex, "证据包导出失败");
         }
         finally
         {
@@ -282,7 +284,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, comparison.Summary, "两次体检对比", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        { MessageBox.Show(this, ex.Message, "无法对比报告", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { App.ReportError("CompareReports", ex, "无法对比报告"); }
         finally { SetBusy(false); }
     }
 
@@ -333,7 +335,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "报告导出失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            App.ReportError("ReportExport", ex, "报告导出失败");
         }
     }
 
@@ -421,7 +423,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "复制失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            App.ReportError("Clipboard", ex, "复制失败");
         }
     }
 
@@ -433,7 +435,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, errorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
+            App.ReportError("OpenTrustedTarget", ex, errorTitle);
         }
     }
 

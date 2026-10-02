@@ -5,8 +5,8 @@ namespace IsMySteamSafe.Core.Models;
 public static class ProductInfo
 {
     public const string Name = "我的 Steam 安全吗？";
-    public const string Version = "0.2.6";
-    public const string Edition = "v0.2.6";
+    public const string Version = "0.2.7";
+    public const string Edition = "v0.2.7";
     public const string OfficialSupportUrl = "https://help.steampowered.com/";
     public const string OfficialInstallerUrl = "https://store.steampowered.com/about/";
 }

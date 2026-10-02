@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows10.0.19041": {
+      "IsMySteamSafe": {
+        "type": "Project",
+        "dependencies": {
+          "IsMySteamSafe.Core": "[0.2.7, )"
+        }
+      },
+      "ismysteamsafe.core": {
+        "type": "Project"
+      }
+    },
+    "net10.0-windows10.0.19041/win-x64": {}
+  }
+}

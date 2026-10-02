@@ -5,7 +5,14 @@
   #error OutputDir must be supplied.
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.2.6"
+  #define AppVersion "0.2.7"
+#endif
+
+#if !FileExists(PayloadDir + "\IsMySteamSafe.exe") || !FileExists(PayloadDir + "\IsMySteamSafe.Standard.exe") || !FileExists(PayloadDir + "\IsMySteamSafe.Compat.exe")
+  #error The complete unified native startup payload is required.
+#endif
+#if !FileExists(PayloadDir + "\SHA256SUMS.txt")
+  #error The signed payload hash manifest is required.
 #endif
 
 [Setup]
@@ -21,7 +28,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0.17763
+MinVersion=10.0.19041
 OutputDir={#OutputDir}
 OutputBaseFilename=IsMySteamSafe-{#AppVersion}-setup
 Compression=lzma2/ultra64

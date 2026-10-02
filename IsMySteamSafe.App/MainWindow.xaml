@@ -28,7 +28,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Padding="10,5" CornerRadius="12" Background="#294861">
-                        <TextBlock Foreground="#E6F5F2" FontWeight="SemiBold" Text="v0.2.6" />
+                        <TextBlock Foreground="#E6F5F2" FontWeight="SemiBold" Text="v0.2.7" />
                     </Border>
                 </StackPanel>
             </Grid>

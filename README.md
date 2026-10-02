@@ -4,9 +4,9 @@
 
 > 不是杀毒软件，而是一个回答“我的 Steam 到底被没被动过手脚”的本地审计工具。
 
-当前版本：**v0.2.6**。提供当前用户安装包和便携包，保留客户端检查与只读取证能力。签名类型以包内 `SIGNING.txt` 为准，自签名构建不等于公开受信任的发布者签名。
+当前产品版本：**0.2.7**，本轮为 [v0.2.7-preview.1 自签名预发布](https://github.com/fenglinbei/IsMySteamSafe/releases/tag/v0.2.7-preview.1)。同一安装包先检测实际 .NET 宿主，只有确认已知 CET 初始化错误才尝试兼容模式；其他启动失败和运行时未知错误生成本地报告。签名类型以包内 `SIGNING.txt` 为准，自签名构建不等于公开受信任的发布者签名。
 
-使用 `IsMySteamSafe-0.2.6-setup.exe` 安装，默认目录为当前用户的 `%LOCALAPPDATA%\Programs\IsMySteamSafe`，不要求管理员权限。卸载只移除程序和快捷方式，不删除另行保存的报告与证据包。源码、程序、安装器和卸载器分别打包验证，签名及信任说明见 [SIGNING.md](docs/SIGNING.md)。
+使用发行页完整的 `IsMySteamSafe-0.2.7-setup.exe` 安装，默认目录为当前用户的 `%LOCALAPPDATA%\Programs\IsMySteamSafe`，不要求管理员权限。先关闭旧程序，不要单独替换 EXE 或混用 DLL。最低系统为 Windows 10 x64 build 19041，自包含 .NET 10.0.12。卸载不删除另行保存的报告与证据包。签名及信任说明见 [SIGNING.md](docs/SIGNING.md)，本轮行为与验收边界见 [统一启动与错误报告](docs/UNIFIED-STARTUP.md)。受影响的旧 Win10 CET 实机仍需回访复测。
 
 ## 它会做什么
 
@@ -58,7 +58,7 @@
 
 ## 构建
 
-需要 Windows 与 .NET 10 SDK：
+需要 Windows 与固定的 .NET SDK 10.0.400；构建发行包还需要 Visual Studio C++ x64 工具及 Inno Setup 6：
 
 ```powershell
 dotnet build .\IsMySteamSafe.slnx -c Release
@@ -81,7 +81,7 @@ dotnet run --project .\IsMySteamSafe.SelfTest\IsMySteamSafe.SelfTest.csproj -c R
 
 ## 隐私
 
-默认体检不产生上传行为。只有用户主动选择“导出报告/只读取证”时才写入指定路径。证据包默认脱敏当前用户目录、17 位 SteamID 及 URL 的 `u=`/`d=` 参数，但仍可能包含进程名、域名、任务动作和注册表值，公开分享前请自行审阅。
+默认体检不产生上传行为。导出报告和证据包写入用户指定位置；启动诊断及未知错误报告自动保存在 `%LOCALAPPDATA%\IsMySteamSafe\Logs`，写入失败时尝试临时目录。日志有大小与保留数量限制，不读取扫描内容、账户配置或环境变量全集，不自动上传。证据包和错误报告会脱敏常见秘密与用户名路径，仍可能包含其他本机路径，分享前请自行审阅。
 
 ## 许可证
 

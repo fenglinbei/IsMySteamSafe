@@ -4,6 +4,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>IsMySteamSafe</AssemblyName>
     <RootNamespace>IsMySteamSafe.App</RootNamespace>
+    <StartupObject>IsMySteamSafe.App.StartupProgram</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\App.ico</ApplicationIcon>
     <PublishSingleFile>false</PublishSingleFile>

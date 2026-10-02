@@ -1,13 +1,27 @@
 <Project>
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <IsMySteamSafeRuntimeFrameworkVersion>10.0.12</IsMySteamSafeRuntimeFrameworkVersion>
+    <CetCompat>true</CetCompat>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Version>0.2.6</Version>
-    <AssemblyVersion>0.2.6.0</AssemblyVersion>
-    <FileVersion>0.2.6.0</FileVersion>
-    <InformationalVersion>0.2.6</InformationalVersion>
+    <VersionPrefix>0.2.7</VersionPrefix>
+    <Version>$(VersionPrefix)</Version>
+    <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
+    <FileVersion>$(VersionPrefix).0</FileVersion>
+    <IsMySteamSafeMinimumSelfTests>40</IsMySteamSafeMinimumSelfTests>
+    <IsMySteamSafeSourceRevision Condition="'$(IsMySteamSafeSourceRevision)' == ''">unattributed</IsMySteamSafeSourceRevision>
+    <IsMySteamSafeBuildChannel Condition="'$(IsMySteamSafeBuildChannel)' == ''">local</IsMySteamSafeBuildChannel>
+    <IsMySteamSafeBuildId Condition="'$(IsMySteamSafeBuildId)' == ''">$(IsMySteamSafeSourceRevision).$(IsMySteamSafeBuildChannel)</IsMySteamSafeBuildId>
+    <InformationalVersion>$(VersionPrefix)+$(IsMySteamSafeBuildId)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <RepositoryCommit>$(IsMySteamSafeSourceRevision)</RepositoryCommit>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsAsErrors>
     <Authors>IsMySteamSafe contributors</Authors>
     <Product>我的 Steam 安全吗？</Product>
     <Copyright>Copyright © 2026 fenglinbei</Copyright>
@@ -16,4 +30,17 @@
     <RepositoryUrl>https://github.com/fenglinbei/IsMySteamSafe</RepositoryUrl>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+  <Target Name="PinIsMySteamSafeSelfContainedRuntime" BeforeTargets="ProcessFrameworkReferences"
+          Condition="'$(SelfContained)' == 'true'">
+    <ItemGroup>
+      <KnownFrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App;Microsoft.WindowsDesktop.App.WPF;Microsoft.WindowsDesktop.App.WindowsForms"
+                               Condition="'%(KnownFrameworkReference.TargetFramework)' == 'net10.0'">
+        <DefaultRuntimeFrameworkVersion>$(IsMySteamSafeRuntimeFrameworkVersion)</DefaultRuntimeFrameworkVersion>
+        <LatestRuntimeFrameworkVersion>$(IsMySteamSafeRuntimeFrameworkVersion)</LatestRuntimeFrameworkVersion>
+      </KnownFrameworkReference>
+      <KnownAppHostPack Update="Microsoft.NETCore.App" Condition="'%(KnownAppHostPack.TargetFramework)' == 'net10.0'">
+        <AppHostPackVersion>$(IsMySteamSafeRuntimeFrameworkVersion)</AppHostPackVersion>
+      </KnownAppHostPack>
+    </ItemGroup>
+  </Target>
 </Project>

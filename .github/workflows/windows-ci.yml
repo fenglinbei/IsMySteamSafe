@@ -1,0 +1,61 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-selftest:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      NUGET_XMLDOC_MODE: skip
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Build exact clean source and verify native startup
+        id: acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'imss'
+          "results_root=$root" >> $env:GITHUB_OUTPUT
+          & ./scripts/build-release.ps1 -OutputRoot $root -SkipInstaller -BuildChannel ci
+          $bundles = @(Get-ChildItem -LiteralPath $root -Directory | Where-Object Name -Like 'IsMySteamSafe-*-ci-*')
+          if ($bundles.Count -ne 1) { throw 'Exactly one completed CI bundle is required.' }
+          $metadata = Get-Content -LiteralPath (Join-Path $bundles[0].FullName 'RELEASE-METADATA.json') -Raw | ConvertFrom-Json
+          if ($metadata.commit -cne $env:GITHUB_SHA -or $metadata.buildChannel -cne 'ci' -or
+              $metadata.dirty -ne $false -or $metadata.signing.status -cne 'UNSIGNED-CI') {
+            throw 'CI bundle identity differs from the exact workflow commit.'
+          }
+
+      - name: Upload exact-build acceptance evidence
+        if: always() && steps.acceptance.outputs.results_root != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: IsMySteamSafe-acceptance-${{ github.sha }}
+          path: |
+            ${{ steps.acceptance.outputs.results_root }}/**/RELEASE-METADATA.json
+            ${{ steps.acceptance.outputs.results_root }}/**/SELFTEST-RESULTS.json
+            ${{ steps.acceptance.outputs.results_root }}/**/UNIFIED-STARTUP-RESULTS.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
