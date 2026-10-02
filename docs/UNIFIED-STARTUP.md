@@ -18,6 +18,8 @@ App 与原生入口保持 `asInvoker`，安装器保持当前用户安装及原 
 
 先退出旧程序，再运行完整安装器升级。不要仅替换主 EXE，也不要把便携包覆盖到混有其他程序 DLL 的目录。`IsMySteamSafe.exe --startup-check` 可只做启动预检并输出模式及诊断报告位置，不打开窗口、不执行体检。
 
+0.2.6 留下的 `mscordaccore_amd64_amd64_10.0.1126.37416.dll` 不属于新版运行时。安装器只在该精确名称及公开旧包 SHA-256 均匹配时清理它；其他文件或被修改的同名文件保持原样，后者仍会导致完整性检查拒绝启动。便携包请解压到新目录。
+
 ## 本地报告
 
 - 启动报告：`%LOCALAPPDATA%\IsMySteamSafe\Logs\startup-*.txt`；备用 `%TEMP%\IsMySteamSafe-Startup-Reports`。
