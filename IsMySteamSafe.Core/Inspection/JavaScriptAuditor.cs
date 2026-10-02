@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text;
 using IsMySteamSafe.Core.Models;
 using IsMySteamSafe.Core.Utilities;
 
@@ -13,12 +14,14 @@ public sealed record ScriptAnalysis(
     bool HasGameActionHandler,
     bool HasHttpsRenderingCheck,
     IReadOnlySet<string> RouteKeys,
-    IReadOnlyList<(string Key, string Url)> RouteUrls);
+    IReadOnlyList<(string Key, string Url)> RouteUrls,
+    bool HasUnresolvedRoutes = false);
+
+public sealed record JavaScriptAuditLimits(int MaximumFiles = 2000, long MaximumScriptBytes = 32L * 1024 * 1024,
+    long MaximumTotalBytes = 256L * 1024 * 1024, int MaximumDirectories = 10000);
 
 public static partial class JavaScriptAuditor
 {
-    private const long MaximumScriptBytes = 32L * 1024 * 1024;
-    private const long MaximumTotalBytes = 256L * 1024 * 1024;
     private static readonly string[] RouteKeyNames = ["SupportMessages", "HelpAppPage", "HelpFrontPage"];
 
     [GeneratedRegex(@"return\s*(?<expr>!!?\s*[01]|[01]|true|false)\s*(?:[;,}])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
@@ -42,9 +45,14 @@ public static partial class JavaScriptAuditor
     public static async Task<(AuditCheckResult InterfaceCheck, AuditCheckResult RouteCheck)> AuditAsync(
         string steamRoot,
         AuditReport report,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        JavaScriptAuditLimits? limits = null)
     {
-        List<string> files = EnumerateScripts(steamRoot).Take(2000).ToList();
+        limits ??= new JavaScriptAuditLimits();
+        if (limits.MaximumFiles <= 0 || limits.MaximumScriptBytes <= 0 || limits.MaximumTotalBytes <= 0 || limits.MaximumDirectories <= 0)
+            throw new ArgumentOutOfRangeException(nameof(limits));
+        List<string> enumerationLimitations = [];
+        List<string> files = EnumerateScripts(steamRoot, limits, enumerationLimitations, cancellationToken);
         bool popup = false;
         bool active = false;
         bool gameAction = false;
@@ -55,33 +63,27 @@ public static partial class JavaScriptAuditor
         int routeFindings = 0;
         long totalBytes = 0;
         int skipped = 0;
+        bool unresolvedRoutes = false;
 
         foreach (string path in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            FileInfo info;
-            try { info = new FileInfo(path); }
-            catch { skipped++; continue; }
-            if (info.Length > MaximumScriptBytes || totalBytes + info.Length > MaximumTotalBytes)
-            {
-                skipped++;
-                continue;
-            }
-
             string text;
+            long bytesRead;
             try
             {
-                text = await FileUtilities.ReadTextBoundedAsync(path, MaximumScriptBytes, cancellationToken);
+                (text, bytesRead) = await ReadScriptAsync(path,
+                    Math.Min(limits.MaximumScriptBytes, limits.MaximumTotalBytes - totalBytes), cancellationToken);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 skipped++;
                 continue;
             }
 
-            totalBytes += info.Length;
+            totalBytes += bytesRead;
             report.Metrics.JavaScriptFilesChecked++;
-            report.Metrics.JavaScriptBytesChecked += info.Length;
+            report.Metrics.JavaScriptBytesChecked += bytesRead;
             ScriptAnalysis analysis = AnalyzeText(text);
             popup |= analysis.HasSupportPopupReference;
             active |= analysis.HasSupportActiveReference;
@@ -89,6 +91,7 @@ public static partial class JavaScriptAuditor
             httpsCheck |= analysis.HasHttpsRenderingCheck;
             routeKeys.UnionWith(analysis.RouteKeys);
             routeUrls.AddRange(analysis.RouteUrls.Select(item => (item.Key, item.Url, path)));
+            unresolvedRoutes |= analysis.HasUnresolvedRoutes;
 
             foreach (ScriptSignal signal in analysis.Signals)
             {
@@ -109,10 +112,11 @@ public static partial class JavaScriptAuditor
             }
         }
 
+        HashSet<string> verifiedStaticRoutes = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string key, string url, string path) in routeUrls.Distinct())
         {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) continue;
-            if (SupportUrlInspector.IsSteamPoweredHost(uri.Host)) continue;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) { unresolvedRoutes = true; continue; }
+            if (SupportUrlInspector.IsSteamPoweredHost(uri.Host)) { verifiedStaticRoutes.Add(key); continue; }
             routeFindings++;
             report.Findings.Add(new AuditFinding
             {
@@ -130,9 +134,11 @@ public static partial class JavaScriptAuditor
         }
 
         report.Metrics.RouteKeysObserved += routeKeys.Count;
-        if (skipped > 0) report.CoverageNotes.Add($"有 {skipped} 个 Steam JavaScript 文件因权限不足或超过大小上限而未读取，这部分不会标为已检查。");
+        report.CoverageNotes.AddRange(enumerationLimitations);
+        if (skipped > 0) report.CoverageNotes.Add($"有 {skipped} 个 Steam JavaScript 文件因读取失败、单文件上限或总字节预算而未读取，这部分不会标为已检查。");
         report.CoverageNotes.Add("新版 Steam 的部分 URL 映射由 SteamClient.URL.GetSteamURLList 在运行时提供，本版会检查直接赋值和局部变量路由映射，但无法覆盖全部运行时映射。");
 
+        bool readCoverageComplete = skipped == 0 && enumerationLimitations.Count == 0;
         bool invariantsPresent = popup && active && gameAction;
         AuditCheckResult interfaceCheck = new()
         {
@@ -140,9 +146,11 @@ public static partial class JavaScriptAuditor
             Priority = AuditPriority.P0,
             Area = AuditArea.InterfaceCode,
             Name = "steamui 关键逻辑",
-            Level = interfaceFindings > 0 ? AuditLevel.ConfirmedTampering : invariantsPresent ? AuditLevel.Passed : AuditLevel.Incomplete,
+            Level = interfaceFindings > 0 ? AuditLevel.ConfirmedTampering : invariantsPresent && readCoverageComplete ? AuditLevel.Passed : AuditLevel.Incomplete,
             Summary = interfaceFindings > 0
                 ? $"命中 {interfaceFindings} 处与假红信一致的语义篡改。"
+                : !readCoverageComplete
+                    ? "未发现已支持的篡改特征，但部分脚本未能完整读取或枚举，检查不完整。"
                 : invariantsPresent
                     ? $"已读取 {report.Metrics.JavaScriptFilesChecked} 个脚本，关键动态逻辑仍可见。"
                     : "未发现已支持的篡改特征，但当前 Steam 版本的部分关键结构未能定位。",
@@ -159,10 +167,14 @@ public static partial class JavaScriptAuditor
             Priority = AuditPriority.P0,
             Area = AuditArea.SupportRoutes,
             Name = "客服路由域名",
-            Level = routeFindings > 0 ? AuditLevel.ConfirmedTampering : routeKeys.Count == RouteKeyNames.Length ? AuditLevel.Passed : AuditLevel.Incomplete,
+            Level = routeFindings > 0 ? AuditLevel.ConfirmedTampering
+                : readCoverageComplete && !unresolvedRoutes && verifiedStaticRoutes.Count == RouteKeyNames.Length ? AuditLevel.Passed : AuditLevel.Incomplete,
             Summary = routeFindings > 0
                 ? $"发现 {routeFindings} 个指向第三方域名的客服路由证据。"
-                : $"观察到 {routeKeys.Count}/{RouteKeyNames.Length} 个目标路由键，未发现其附近写死到第三方域名。",
+                : $"观察到 {routeKeys.Count}/{RouteKeyNames.Length} 个目标路由键，核对了 {verifiedStaticRoutes.Count}/{RouteKeyNames.Length} 个静态官方映射。" +
+                    (readCoverageComplete && !unresolvedRoutes && verifiedStaticRoutes.Count == RouteKeyNames.Length
+                        ? "已完成本次静态映射检查；运行时替换不在覆盖范围。"
+                        : "存在未解析的动态映射、缺少静态地址或未读取脚本，不能判为完整通过。"),
             EvidenceCount = routeFindings
         };
         return (interfaceCheck, routeCheck);
@@ -257,6 +269,7 @@ public static partial class JavaScriptAuditor
 
         HashSet<string> routeKeys = new(StringComparer.Ordinal);
         List<(string Key, string Url)> routeUrls = [];
+        bool unresolvedRoutes = text.Contains("GetSteamURLList", StringComparison.Ordinal);
         foreach (string key in RouteKeyNames)
         {
             foreach (int index in AllIndexesOf(text, key).Take(80))
@@ -278,7 +291,7 @@ public static partial class JavaScriptAuditor
             Match? assignment = UrlVariableAssignmentRegex().Matches(prefix)
                 .Cast<Match>()
                 .LastOrDefault(item => item.Groups["var"].Value.Equals(variable, StringComparison.Ordinal));
-            if (assignment is null) continue;
+            if (assignment is null) { unresolvedRoutes = true; continue; }
             routeUrls.Add((map.Groups["key"].Value, assignment.Groups["url"].Value.TrimEnd('.', ',', ';', ')', ']', '}')));
         }
 
@@ -289,20 +302,94 @@ public static partial class JavaScriptAuditor
             gameAction,
             httpsCheck,
             routeKeys,
-            routeUrls.Distinct().ToList());
+            routeUrls.Distinct().ToList(),
+            unresolvedRoutes);
     }
 
-    private static IEnumerable<string> EnumerateScripts(string steamRoot)
+    private static List<string> EnumerateScripts(string steamRoot, JavaScriptAuditLimits limits, List<string> limitations,
+        CancellationToken cancellationToken)
     {
+        List<string> scripts = [];
+        int directoriesVisited = 0;
         foreach (string relative in new[] { "steamui", "clientui", Path.Combine("millennium", "plugins") })
         {
             string root = Path.Combine(steamRoot, relative);
-            if (!Directory.Exists(root)) continue;
-            IEnumerable<string> files;
-            try { files = Directory.EnumerateFiles(root, "*.js", SearchOption.AllDirectories); }
-            catch { continue; }
-            foreach (string file in files) yield return file;
+            Stack<string> pending = new();
+            pending.Push(root);
+            while (pending.TryPop(out string? directory))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                FileAttributes directoryAttributes;
+                try { directoryAttributes = File.GetAttributes(directory); }
+                catch (DirectoryNotFoundException) when (directory == root) { continue; }
+                catch (FileNotFoundException) when (directory == root) { continue; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    limitations.Add($"Steam JavaScript 目录不可读取：{directory}（{ex.Message}）");
+                    continue;
+                }
+                if (++directoriesVisited > limits.MaximumDirectories)
+                {
+                    limitations.Add($"Steam JavaScript 目录枚举达到 {limits.MaximumDirectories} 个目录上限，后续目录未检查。");
+                    return scripts;
+                }
+                try
+                {
+                    if ((directoryAttributes & FileAttributes.ReparsePoint) != 0)
+                    {
+                        limitations.Add($"Steam JavaScript 目录为重解析点，未跟随读取：{directory}");
+                        continue;
+                    }
+                    foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        FileAttributes attributes = File.GetAttributes(entry);
+                        if ((attributes & FileAttributes.Directory) != 0)
+                        {
+                            if (pending.Count + directoriesVisited >= limits.MaximumDirectories)
+                            {
+                                limitations.Add($"Steam JavaScript 目录枚举达到 {limits.MaximumDirectories} 个目录上限，部分子目录未检查。");
+                            }
+                            else pending.Push(entry);
+                            continue;
+                        }
+                        if (!Path.GetExtension(entry).Equals(".js", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (scripts.Count == limits.MaximumFiles)
+                        {
+                            limitations.Add($"Steam JavaScript 文件枚举达到 {limits.MaximumFiles} 个文件上限，后续脚本未检查。");
+                            return scripts;
+                        }
+                        if ((attributes & FileAttributes.ReparsePoint) != 0)
+                            limitations.Add($"Steam JavaScript 文件为重解析点，未跟随读取：{entry}");
+                        else scripts.Add(entry);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    limitations.Add($"Steam JavaScript 目录未能完整枚举：{directory}（{ex.Message}）");
+                }
+            }
         }
+        return scripts;
+    }
+
+    private static async Task<(string Text, long Bytes)> ReadScriptAsync(string path, long maximumBytes, CancellationToken cancellationToken)
+    {
+        await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
+            64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (maximumBytes <= 0 || stream.Length > maximumBytes) throw new IOException("脚本超过剩余读取预算。");
+        using MemoryStream buffer = new();
+        byte[] block = new byte[64 * 1024];
+        while (true)
+        {
+            int read = await stream.ReadAsync(block, cancellationToken);
+            if (read == 0) break;
+            if (buffer.Length + read > maximumBytes) throw new IOException("脚本读取期间增长到预算上限之外。");
+            buffer.Write(block, 0, read);
+        }
+        buffer.Position = 0;
+        using StreamReader reader = new(buffer, new UTF8Encoding(false, false), detectEncodingFromByteOrderMarks: true);
+        return (await reader.ReadToEndAsync(cancellationToken), buffer.Length);
     }
 
     private static IEnumerable<int> AllIndexesOf(string text, string value)

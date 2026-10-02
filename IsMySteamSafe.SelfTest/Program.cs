@@ -18,6 +18,8 @@ internal static partial class Program
 
     private static async Task<int> Main(string[] args)
     {
+        if (args is ["--verify-rule-package", string packagePath, string ruleResultPath])
+            return await VerifyPublishedRulePackageAsync(packagePath, ruleResultPath);
         if (args is ["--render-ui", string output]) return UiPreview.Render(output);
         if (args is ["--analyze-script", string path])
         {
@@ -87,6 +89,24 @@ internal static partial class Program
             ("expanded privacy and opt-in boundaries", () => Sync(TestExpandedPrivacy)),
             ("quick coverage, real read failures and media boundaries", TestQuickCoverageAsync)
         ];
+        if (!startupOnly) tests.AddRange([
+            ("verified Valve identity rejects broken and spoofed signatures", () => Sync(TestTrustedValveIdentity)),
+            ("candidate risk classification respects signature and opt-in boundaries", () => Sync(TestClientSignatureClassification)),
+            ("static route coverage does not imply dynamic coverage", TestStaticRouteCoverageAsync),
+            ("JavaScript limits and actual read failures stay incomplete", TestJavaScriptReadCoverageAsync),
+            ("unreadable registry branches stay incomplete", () => Sync(TestRegistryReadCoverage)),
+            ("registry partial findings retain coverage limitations", () => Sync(TestRegistryPartialFindings)),
+            ("signed rule packages reject tampering stale versions and incompatible engines", TestRulePackageTrustAsync),
+            ("rule schemas reject ambiguous and weakening updates", TestRulePackageSchemaAsync),
+            ("invalid local rule updates retain builtin protection and report provenance", TestRulePackageFallbackAsync)
+            ,("all content formats receive exact hash coverage", TestAllFormatHashCoverageAsync)
+            ,("opaque formats and size limits remain visible", TestUnsupportedContentCoverageAsync)
+            ,("content budgets interleave roots and expose unvisited sources", TestFairContentRootBudgetAsync)
+            ,("installed ordinary games enter content discovery", TestInstalledGameDiscoveryAsync)
+            ,("bounded cross-language suspicious combinations", () => Sync(TestCrossLanguageContentSignals))
+            ,("content rule benign negative controls", () => Sync(TestContentSignalNegativeControls))
+            ,("C# static combinations are review evidence only", TestCSharpStaticReviewOnlyAsync)
+        ]);
         if (startupOnly) tests.Clear();
         tests.AddRange([
             ("startup host identity and valid readiness protocol", () => Sync(TestStartupProtocol)),

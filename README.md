@@ -4,19 +4,19 @@
 
 > 不是杀毒软件，而是一个回答“我的 Steam 到底被没被动过手脚”的本地审计工具。
 
-当前产品版本：**0.2.7**，本轮为 [v0.2.7-preview.1 自签名预发布](https://github.com/fenglinbei/IsMySteamSafe/releases/tag/v0.2.7-preview.1)。同一安装包先检测实际 .NET 宿主，只有确认已知 CET 初始化错误才尝试兼容模式；其他启动失败和运行时未知错误生成本地报告。签名类型以包内 `SIGNING.txt` 为准，自签名构建不等于公开受信任的发布者签名。
+当前产品版本：**0.2.8**，本轮为 [v0.2.8-preview.1 自签名预发布](https://github.com/fenglinbei/IsMySteamSafe/releases/tag/v0.2.8-preview.1)。同一安装包先检测实际 .NET 宿主，只有确认已知 CET 初始化错误才尝试兼容模式；其他启动失败和运行时未知错误生成本地报告。签名类型以包内 `SIGNING.txt` 为准，自签名构建不等于公开受信任的发布者签名。
 
-使用发行页完整的 `IsMySteamSafe-0.2.7-setup.exe` 安装，默认目录为当前用户的 `%LOCALAPPDATA%\Programs\IsMySteamSafe`，不要求管理员权限。先关闭旧程序，不要单独替换 EXE 或混用 DLL。最低系统为 Windows 10 x64 build 19041，自包含 .NET 10.0.12。卸载不删除另行保存的报告与证据包。签名及信任说明见 [SIGNING.md](docs/SIGNING.md)，本轮行为与验收边界见 [统一启动与错误报告](docs/UNIFIED-STARTUP.md)。受影响的旧 Win10 CET 实机仍需回访复测。
+使用发行页完整的 `IsMySteamSafe-0.2.8-setup.exe` 安装，默认目录为当前用户的 `%LOCALAPPDATA%\Programs\IsMySteamSafe`，不要求管理员权限。先关闭旧程序，不要单独替换 EXE 或混用 DLL。最低系统为 Windows 10 x64 build 19041，自包含 .NET 10.0.12。卸载不删除另行保存的报告与证据包。签名及信任说明见 [SIGNING.md](docs/SIGNING.md)，本轮行为与验收边界见 [统一启动与错误报告](docs/UNIFIED-STARTUP.md)。受影响的旧 Win10 CET 实机仍需回访复测。
 
 ## 它会做什么
 
-已加入本地全 AppID 工坊、MOD 与插件的轻量检查，范围与验收见 [COVERAGE-0.2.6.md](docs/COVERAGE-0.2.6.md)，后续事项见 [ROADMAP.md](docs/ROADMAP.md)。图标来源与重建方式见 [ICONS.md](docs/ICONS.md)。
+0.2.8 扩展了普通游戏目录、C# 等脚本与未知格式覆盖，加入签名规则包导入，详见 [检测升级与规则更新](docs/DETECTION-UPDATES.md)。历史内容检查范围与验收见 [COVERAGE-0.2.6.md](docs/COVERAGE-0.2.6.md)，后续事项见 [ROADMAP.md](docs/ROADMAP.md)。图标来源与重建方式见 [ICONS.md](docs/ICONS.md)。
 
 - 检查 Steam 客户端敏感目录中的 `version.dll`、`versionOrg.dll`、`msacm32.drv` 与 `wsock32.dll`，验证数字签名并记录 SHA-256。
 - 检查 steamui 中与客服告警、游戏启动、隐藏地址栏和客服路由有关的语义级篡改迹象，支持局部变量间接路由。
 - 检查 `steam.cfg` 是否成对抑制 Steam 自更新。
 - 只读枚举 Steam 相关进程模块，以及 Run、IFEO、SilentProcessExit 等启动链配置。
-- 关联所有 Steam 库的工坊 AppID、已适配 MOD 与 Steam 插件目录，对关键小文件核对已知内容规则和可疑脚本组合。单凭普通 MOD 的 DLL、脚本、未签名程序或缺少 project.json 不判病毒。
+- 关联所有 Steam 库的工坊 AppID、已安装游戏目录、已适配 MOD 与 Steam 插件目录，对关键小文件核对已知内容规则和可疑脚本组合。单凭普通 MOD 的 DLL、脚本、未签名程序或缺少 project.json 不判病毒。
 - 区分文件存在、已知恶意文件启动链、模块运行关联与 Steam 篡改，未展开归档明确标记内部未检查。
 - 客观显示系统代理状态，本地 Clash 等代理本身不参与风险结论。
 - 列出全部工坊的项目数量与 AppID，Wallpaper 单独展示项目类型，不把“存在应用程序壁纸”判为中毒。
@@ -29,7 +29,7 @@
 ## 它明确不做什么
 
 - 不常驻后台，不安装服务或驱动。
-- 不联网扫描，不上传文件、报告、账号信息或链接，证据包只写到用户选择的位置。
+- 不联网扫描，不上传文件、报告、账号信息或链接。手动导入官方签名规则包后仅在本地保存，点击发布页按钮才打开浏览器。
 - 不维护病毒家族特征库，不宣称识别所有恶意程序。
 - 不解包或执行创意工坊内容，不对任意 MP4/压缩包作“有毒/无毒”结论。
 - 不删除、隔离、修复文件，不修改注册表、代理、证书或防火墙。

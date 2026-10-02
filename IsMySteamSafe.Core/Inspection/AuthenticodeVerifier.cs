@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace IsMySteamSafe.Core.Inspection;
@@ -38,7 +39,7 @@ public static class AuthenticodeVerifier
             };
 
             string? subject = TryGetSignerSubject(filePath);
-            bool valve = subject?.Contains("Valve Corp", StringComparison.OrdinalIgnoreCase) == true;
+            bool valve = IsTrustedValveSigner(status, subject);
             string detail = status switch
             {
                 SignatureStatus.Valid when valve => "签名链有效，签名者为 Valve Corp.",
@@ -56,6 +57,34 @@ public static class AuthenticodeVerifier
         {
             if (fileInfoPointer != IntPtr.Zero) Marshal.FreeHGlobal(fileInfoPointer);
             if (pathPointer != IntPtr.Zero) Marshal.FreeCoTaskMem(pathPointer);
+        }
+    }
+
+    public static bool IsTrustedValveSigner(SignatureStatus status, string? subject)
+    {
+        // A display name is never evidence of trust when WinVerifyTrust failed.
+        if (status != SignatureStatus.Valid || string.IsNullOrWhiteSpace(subject)) return false;
+        try
+        {
+            X500DistinguishedName name = new(subject);
+            bool identityFound = false;
+            foreach (X500RelativeDistinguishedName attribute in name.EnumerateRelativeDistinguishedNames())
+            {
+                // Ambiguous multi-valued RDNs cannot establish the product's signer identity.
+                if (attribute.HasMultipleElements) return false;
+                string? oid = attribute.GetSingleElementType().Value;
+                if (oid is not ("2.5.4.3" or "2.5.4.10")) continue; // CN or O only; never OU/text substrings.
+                string? value = attribute.GetSingleElementValue();
+                if (!string.Equals(value, "Valve Corp.", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(value, "Valve Corp", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(value, "Valve Corporation", StringComparison.OrdinalIgnoreCase)) return false;
+                identityFound = true;
+            }
+            return identityFound;
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException or InvalidOperationException)
+        {
+            return false;
         }
     }
 

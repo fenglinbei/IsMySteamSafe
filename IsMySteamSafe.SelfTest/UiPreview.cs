@@ -2,8 +2,10 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using IsMySteamSafe.Core.Models;
 
 namespace IsMySteamSafe.SelfTest;
@@ -15,11 +17,24 @@ internal static class UiPreview
         Exception? error = null;
         Thread thread = new(() =>
         {
+            IsMySteamSafe.App.App? app = null;
+            IsMySteamSafe.App.MainWindow? window = null;
             try
             {
                 Directory.CreateDirectory(output);
-                IsMySteamSafe.App.App app = new(); app.InitializeComponent();
-                IsMySteamSafe.App.MainWindow window = new();
+                RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+                app = new();
+                // Load the real application resources without InitializeComponent's
+                // StartupUri assignment; pumping the dispatcher must not create a second UI.
+                Application.LoadComponent(app, new Uri("/IsMySteamSafe;component/app.xaml", UriKind.Relative));
+                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                window = new()
+                {
+                    Width = 1180, Height = 940, WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = -32000, Top = -32000, ShowInTaskbar = false, ShowActivated = false,
+                    WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize
+                };
+                window.Show();
                 AuditReport scope = new() { Conclusion = AuditConclusion.NoTamperingFound, CompletedAt = DateTimeOffset.Now };
                 scope.Checks.Add(new() { Id = "client-files", Name = "客户端文件", Area = AuditArea.ClientFiles, Priority = AuditPriority.P0,
                     Level = AuditLevel.Passed, Summary = "无害预览，核心检查完成。" });
@@ -32,6 +47,8 @@ internal static class UiPreview
                 ((Expander)window.FindName("CoverageExpander")).IsExpanded = true;
                 Capture(window, Path.Combine(output, "quick-coverage-next-step.png"));
                 ((Expander)window.FindName("CoverageExpander")).IsExpanded = false;
+                ((FrameworkElement)window.FindName("RuleStatusText")).BringIntoView();
+                Capture(window, Path.Combine(output, "detection-rules.png"));
                 foreach (var (name, conclusion) in new[] { ("content-risk", AuditConclusion.ContentRiskFound), ("active-risk", AuditConclusion.ActiveThreatFound), ("persistence-risk", AuditConclusion.PersistenceRiskFound) })
                 {
                     AuditReport report = new() { Conclusion = conclusion };
@@ -42,12 +59,12 @@ internal static class UiPreview
                 }
                 TabControl? tabs = Descendants((DependencyObject)window.Content).OfType<TabControl>().FirstOrDefault();
                 if (tabs is not null) { tabs.SelectedIndex = 3; Capture(window, Path.Combine(output, "evidence.png")); }
-                app.Shutdown();
             }
             catch (Exception ex) { error = ex; }
+            finally { window?.Close(); app?.Shutdown(); }
         });
         thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
-        if (error is not null) throw new InvalidOperationException("UI preview failed", error);
+        if (error is not null) { Console.Error.WriteLine("UI_PREVIEW_FAILED: " + error); return 1; }
         Console.WriteLine("UI_PREVIEW_OK"); return 0;
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
@@ -58,12 +75,29 @@ internal static class UiPreview
     private static void Capture(Window window, string output)
     {
         FrameworkElement content = (FrameworkElement)window.Content;
-        content.DataContext = window.DataContext; window.Content = null;
-        Border host = new() { Width = 1180, Height = 840, Background = window.Background ?? Brushes.White, Child = content };
-        host.Measure(new Size(1180, 840)); host.Arrange(new Rect(0, 0, 1180, 840)); host.UpdateLayout();
-        RenderTargetBitmap bitmap = new(1180, 840, 96, 96, PixelFormats.Pbgra32); bitmap.Render(host);
+        const int width = 1180, height = 940;
+        window.UpdateLayout();
+        DispatcherFrame frame = new();
+        window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+        window.UpdateLayout();
+        DrawingVisual background = new();
+        using (DrawingContext context = background.RenderOpen())
+            context.DrawRectangle(window.Background ?? Brushes.White, null, new Rect(0, 0, width, height));
+        RenderTargetBitmap bitmap = new(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(background);
+        bitmap.Render(content);
+        byte[] pixels = new byte[width * height * 4]; bitmap.CopyPixels(pixels, width * 4, 0);
+        HashSet<uint> colors = [];
+        int nontransparent = 0;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            if (pixels[i + 3] > 0) nontransparent++;
+            if ((i & 63) == 0) colors.Add(BitConverter.ToUInt32(pixels, i));
+        }
+        if (nontransparent < width * height / 2 || colors.Count < 16)
+            throw new InvalidOperationException($"UI preview rendered an empty/flat image: pixels={nontransparent}, colors={colors.Count}, visible={content.IsVisible}, size={content.ActualWidth}x{content.ActualHeight}, bounds={VisualTreeHelper.GetDescendantBounds(content)}, offset={VisualTreeHelper.GetOffset(content)}, tier={RenderCapability.Tier}. No successful visual check can be claimed.");
         PngBitmapEncoder encoder = new(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using FileStream stream = File.Create(output); encoder.Save(stream);
-        host.Child = null; window.Content = content;
     }
 }

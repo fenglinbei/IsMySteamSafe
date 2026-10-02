@@ -146,6 +146,17 @@ try {
     $selfTest = Get-Content -LiteralPath $selfTestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-Results $selfTest $minimum 'SelfTest'
     Require ($selfTest.version -ceq $version -and $selfTest.buildIdentity -ceq $identity) 'SelfTest result provenance mismatch.'
+    $rulePackage = $null
+    $ruleVerification = $null
+    if ($null -ne $profile) {
+        $rulePackagePath = Join-Path $stage 'IsMySteamSafe-rules-2026100201.json'
+        $rulePackage = & (Join-Path $snapshot 'scripts\new-rule-package.ps1') -OutputPath $rulePackagePath -SigningThumbprint $profile.Thumbprint -SourceRoot $snapshot
+        $ruleVerificationPath = Join-Path $stage 'RULE-PACKAGE-RESULTS.json'
+        & $testExe '--verify-rule-package' $rulePackagePath $ruleVerificationPath | Out-Host
+        Require ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $ruleVerificationPath)) 'Published rule package verification failed.'
+        $ruleVerification = Get-Content -LiteralPath $ruleVerificationPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Require ($ruleVerification.passed -eq $true -and $ruleVerification.buildIdentity -ceq $identity -and $ruleVerification.packageSha256 -ceq $rulePackage.sha256) 'Rule package evidence differs.'
+    }
     Invoke-ReleaseDotNet (@('publish', 'IsMySteamSafe.App\IsMySteamSafe.App.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '--no-build', '--no-restore', '-o', $payload) + $properties)
     $publishedRuntime = Assert-Runtime $payload 'IsMySteamSafe' $runtimeVersion
     $nativeBuild = Join-Path $work 'native'
@@ -213,6 +224,7 @@ try {
         source = [ordered]@{ method = 'git archive'; includesIgnoredFiles = $false; status = @(); archiveSha256 = Hash $sourceZip }
         runtimeVerification = [ordered]@{ tested = $testedRuntime; published = $publishedRuntime }
         selfTest = $selfTest; selfTestResultsSha256 = Hash $selfTestPath; unifiedStartup = $unified
+        rulePackage = $rulePackage; rulePackageVerification = $ruleVerification
         unifiedStartupTests = $startup; unifiedStartupResultsSha256 = Hash $startupPath
         signing = [ordered]@{ status = $signatureStatus; certificateThumbprint = $(if ($null -eq $profile) { $null } else { $profile.Thumbprint }); timestamp = 'NONE'; publicTrustClaimed = $false; files = $signatureResults }
         payloadManifestSha256 = $manifestHash; payloadFiles = $payloadHashes.Count

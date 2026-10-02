@@ -34,6 +34,11 @@ public static class ReportExporter
         text.AppendLine($"# {ProductInfo.Name} · 体检报告");
         text.AppendLine();
         text.AppendLine($"- 工具版本：`{report.ProductVersion}`");
+        if (report.RuleSet is { } rules)
+        {
+            text.AppendLine($"- 检测规则：{rules.Version} · {Escape(rules.Source)} · {Escape(rules.PublishedAt)} · {rules.RuleCount} 个文件指纹");
+            if (rules.Notice is not null) text.AppendLine($"- 规则更新说明：{Escape(rules.Notice)}");
+        }
         text.AppendLine($"- 体检编号：`{report.AuditId:N}`");
         text.AppendLine($"- 开始时间：{report.StartedAt:yyyy-MM-dd HH:mm:ss zzz}");
         text.AppendLine($"- 完成时间：{report.CompletedAt:yyyy-MM-dd HH:mm:ss zzz}");

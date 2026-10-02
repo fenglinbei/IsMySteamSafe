@@ -7,11 +7,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <VersionPrefix>0.2.7</VersionPrefix>
+    <VersionPrefix>0.2.8</VersionPrefix>
     <Version>$(VersionPrefix)</Version>
     <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
     <FileVersion>$(VersionPrefix).0</FileVersion>
-    <IsMySteamSafeMinimumSelfTests>40</IsMySteamSafeMinimumSelfTests>
+    <IsMySteamSafeMinimumSelfTests>56</IsMySteamSafeMinimumSelfTests>
     <IsMySteamSafeSourceRevision Condition="'$(IsMySteamSafeSourceRevision)' == ''">unattributed</IsMySteamSafeSourceRevision>
     <IsMySteamSafeBuildChannel Condition="'$(IsMySteamSafeBuildChannel)' == ''">local</IsMySteamSafeBuildChannel>
     <IsMySteamSafeBuildId Condition="'$(IsMySteamSafeBuildId)' == ''">$(IsMySteamSafeSourceRevision).$(IsMySteamSafeBuildChannel)</IsMySteamSafeBuildId>

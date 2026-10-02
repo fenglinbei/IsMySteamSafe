@@ -11,8 +11,8 @@ public sealed record ContentCoverageGroup(string Kind, int Count, string NextSte
 
 public static class AuditCoverage
 {
-    public const string Scope = "快速体检检查 Steam 客户端文件、界面逻辑、客服链接、相关进程与启动项，同时轻量检查已发现的本地工坊、MOD 与插件。不全盘扫描，不展开压缩包，不运行文件，正常视频只做格式与结构检查。";
-    public const string Limits = "内容阶段最多检查 5,000 个文件，各根目录也有 5,000 个文件系统条目的枚举上限，文件哈希最多读取 256 MiB，单文件最多 64 MiB，内容阶段约 12 秒。达到边界不代表发现病毒，未检查内容不会视为安全。";
+    public const string Scope = "快速体检检查 Steam 客户端文件、界面逻辑、客服链接、相关进程与启动项，同时轻量检查本地清单中已安装游戏、工坊、MOD 与插件。预算内所有文件均比对 SHA-256，对支持的小型脚本进行静态组合检查。不全盘扫描，不展开压缩包，不运行文件，未命中规则不代表安全。";
+    public const string Limits = "内容阶段最多检查 5,000 个文件，各根目录也有 5,000 个文件系统条目的枚举上限，按来源交替检查。文件哈希最多读取 256 MiB，单文件最多 64 MiB，静态脚本分析最多 2 MiB，内容阶段约 12 秒。视频还做结构检查；未知格式、字节码、快捷方式、压缩内部及达到预算的内容会明确列出未深查范围。";
     public static IReadOnlyList<ContentCoverageGroup> Groups(AuditReport report)
     {
         List<ContentCoverageGroup> groups = report.ContentLimitations.GroupBy(i => (i.Kind, i.NextStep))

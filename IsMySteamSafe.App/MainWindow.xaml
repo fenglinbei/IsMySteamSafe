@@ -28,7 +28,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Padding="10,5" CornerRadius="12" Background="#294861">
-                        <TextBlock Foreground="#E6F5F2" FontWeight="SemiBold" Text="v0.2.7" />
+                        <TextBlock Foreground="#E6F5F2" FontWeight="SemiBold" Text="v0.2.8" />
                     </Border>
                 </StackPanel>
             </Grid>
@@ -54,7 +54,7 @@
                                     <TextBlock x:Name="HeroEyebrowText" Foreground="#177D76" FontWeight="SemiBold" Text="待检查" />
                                     <TextBlock x:Name="HeroTitleText" Margin="0,8,0,0" FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap" Text="检查当前Steam客户端是否被恶意修改" />
                                     <TextBlock x:Name="HeroDescriptionText" Margin="0,9,0,0" MaxWidth="700" TextWrapping="Wrap" LineHeight="21"
-                                               Foreground="#475467" Text="快速检查 Steam 客户端与相关运行状态，同时轻量检查本地工坊、MOD 和插件，不代替全盘查杀。" />
+                                               Foreground="#475467" Text="快速检查 Steam 客户端与相关运行状态，同时轻量检查已安装游戏、工坊、MOD 和插件，不代替全盘查杀。" />
                                     <StackPanel Margin="0,18,0,0" Orientation="Horizontal">
                                         <Button x:Name="StartAuditButton" Style="{StaticResource PrimaryButton}" Content="开始体检" Click="StartAudit_Click"
                                                 AutomationProperties.Name="开始体检" />
@@ -110,6 +110,19 @@
                                         </ItemsControl>
                                     </StackPanel>
                                 </Expander>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,14,0,0" Style="{StaticResource Card}" Padding="16,12">
+                            <StackPanel>
+                                <TextBlock Text="检测规则" FontWeight="SemiBold" />
+                                <TextBlock x:Name="RuleStatusText" Margin="0,5,0,0" TextWrapping="Wrap" />
+                                <TextBlock x:Name="RuleNoticeText" Margin="0,4,0,0" Foreground="#7A5A2B" TextWrapping="Wrap" />
+                                <WrapPanel Margin="0,8,0,0">
+                                    <Button x:Name="ImportRulesButton" Content="导入官方规则包" Click="ImportRules_Click" />
+                                    <Button x:Name="OpenRulesButton" Content="打开规则发布页" Click="OpenRules_Click" />
+                                </WrapPanel>
+                                <TextBlock Foreground="#667085" TextWrapping="Wrap" Text="从官方发布页下载规则文件后导入，程序会验证签名和版本。默认不联网，更新仅在本机保存；规则包不会更新程序本身。" />
                             </StackPanel>
                         </Border>
 

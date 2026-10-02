@@ -27,6 +27,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         ScopeDescriptionText.Text = AuditCoverage.Scope;
         ScopeLimitsText.Text = AuditCoverage.Limits;
+        ShowRuleStatus(KnownContentCatalog.LoadSnapshot().Metadata);
         CheckCards = [];
         Findings = [];
         UrlResults = [];
@@ -98,6 +99,36 @@ public partial class MainWindow : Window
     }
 
     private void CancelAudit_Click(object sender, RoutedEventArgs e) => _auditCancellation?.Cancel();
+
+    private void ShowRuleStatus(RuleSetInfo info)
+    {
+        RuleStatusText.Text = $"{info.Source} · 版本 {info.Version} · 发布日期 {info.PublishedAt.Split('T')[0]} · {info.RuleCount} 个文件指纹";
+        RuleNoticeText.Text = info.Notice ?? "文件指纹和静态组合检查不能代替专业杀毒软件；未命中不等于文件安全。";
+    }
+
+    private async void ImportRules_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        OpenFileDialog dialog = new() { Title = "选择官方签名规则包", Filter = "签名规则包 (*.json)|*.json", Multiselect = false };
+        if (dialog.ShowDialog(this) != true) return;
+        SetBusy(true);
+        try
+        {
+            var snapshot = await Task.Run(() => KnownContentCatalog.Import(dialog.FileName));
+            ShowRuleStatus(snapshot.Metadata);
+            FooterStatusText.Text = "规则已核验，请重新体检以使用当前规则。既有报告保留原规则版本。";
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException or ArgumentException or FormatException)
+        {
+            MessageBox.Show(this, "规则包未被接受。请确认来自官方发布页，且适用于当前程序、未过期并不早于当前规则版本；如有其他窗口正在导入，请待其完成后重试。\n原有规则未被更改。",
+                "规则导入未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception ex) { App.ReportError("RuleImport", ex, "规则导入未完成"); }
+        finally { SetBusy(false); }
+    }
+
+    private void OpenRules_Click(object sender, RoutedEventArgs e) =>
+        OpenTrustedTarget("https://github.com/fenglinbei/IsMySteamSafe/releases", "无法打开规则发布页");
 
     private void ChooseEvidenceFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -204,6 +235,7 @@ public partial class MainWindow : Window
 
     private void PopulateReport(AuditReport report)
     {
+        if (report.RuleSet is not null) ShowRuleStatus(report.RuleSet);
         CoverageSummaryText.Text = report.CoverageSummary;
         ScopeDescriptionText.Text = AuditCoverage.Scope;
         ScopeLimitsText.Text = AuditCoverage.Limits;
@@ -443,6 +475,8 @@ public partial class MainWindow : Window
     {
         _busy = busy;
         StartAuditButton.IsEnabled = !busy;
+        ImportRulesButton.IsEnabled = !busy;
+        OpenRulesButton.IsEnabled = !busy;
         CancelAuditButton.IsEnabled = busy;
         ExportButton.IsEnabled = !busy && _lastReport is not null;
         CompareButton.IsEnabled = !busy && _lastReport is not null;

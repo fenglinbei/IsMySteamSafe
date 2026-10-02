@@ -160,31 +160,35 @@ public static class ProcessModuleAuditor
     }
 }
 
+public delegate IReadOnlyDictionary<string, object?> RegistryValueReader(RegistryHive hive, RegistryView view, string keyPath);
+
 public static class RegistryPersistenceAuditor
 {
     private static readonly string[] TargetExecutables = ["steam.exe", "steamwebhelper.exe", "steamservice.exe"];
 
-    public static AuditCheckResult Audit(SteamLayout layout, AuditReport report)
+    public static AuditCheckResult Audit(SteamLayout layout, AuditReport report, RegistryValueReader? readValues = null)
     {
+        readValues ??= ReadRegistryValues;
         int before = report.Findings.Count;
+        int incompleteReads = 0;
         foreach ((RegistryHive hive, RegistryView view, string label) in RegistryViews())
         {
-            InspectRunKey(hive, view, label, @"Software\Microsoft\Windows\CurrentVersion\Run", layout, report);
-            InspectRunKey(hive, view, label, @"Software\Microsoft\Windows\CurrentVersion\RunOnce", layout, report);
+            if (!InspectRunKey(hive, view, label, @"Software\Microsoft\Windows\CurrentVersion\Run", layout, report, readValues)) incompleteReads++;
+            if (!InspectRunKey(hive, view, label, @"Software\Microsoft\Windows\CurrentVersion\RunOnce", layout, report, readValues)) incompleteReads++;
         }
 
         foreach (RegistryView view in new[] { RegistryView.Registry32, RegistryView.Registry64 })
         {
             foreach (string executable in TargetExecutables)
             {
-                InspectIfeo(view, executable, report);
-                InspectSilentExit(view, executable, report);
+                if (!InspectIfeo(view, executable, report, readValues)) incompleteReads++;
+                if (!InspectSilentExit(view, executable, report, readValues)) incompleteReads++;
             }
         }
 
         int count = report.Findings.Count - before;
         AuditLevel level = count == 0
-            ? AuditLevel.Passed
+            ? incompleteReads == 0 ? AuditLevel.Passed : AuditLevel.Incomplete
             : report.Findings.Skip(before).OrderByDescending(item => AuditLabels.RiskRank(item.Level)).First().Level;
         return new AuditCheckResult
         {
@@ -193,22 +197,22 @@ public static class RegistryPersistenceAuditor
             Area = AuditArea.Persistence,
             Name = "Steam 相关启动项",
             Level = level,
-            Summary = count == 0 ? "未发现通过 Run、IFEO 或 SilentProcessExit 劫持 Steam 进程的配置。" : $"发现 {count} 项 Steam 相关启动配置需要核对。",
+            Summary = (count == 0 ? "已读取的配置中未发现通过 Run、IFEO 或 SilentProcessExit 劫持 Steam 进程的配置。" : $"发现 {count} 项 Steam 相关启动配置需要核对。") +
+                (incompleteReads == 0 ? string.Empty : $"另有 {incompleteReads} 项读取失败，注册表检查不完整。"),
             EvidenceCount = count
         };
     }
 
-    private static void InspectRunKey(RegistryHive hive, RegistryView view, string hiveLabel, string keyPath, SteamLayout layout, AuditReport report)
+    private static bool InspectRunKey(RegistryHive hive, RegistryView view, string hiveLabel, string keyPath, SteamLayout layout, AuditReport report,
+        RegistryValueReader readValues)
     {
         try
         {
-            using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
-            using RegistryKey? key = baseKey.OpenSubKey(keyPath, writable: false);
-            if (key is null) return;
-            foreach (string valueName in key.GetValueNames())
+            IReadOnlyDictionary<string, object?> values = readValues(hive, view, keyPath);
+            foreach ((string valueName, object? value) in values)
             {
                 report.Metrics.PersistenceValuesChecked++;
-                string command = key.GetValue(valueName)?.ToString() ?? string.Empty;
+                string command = value?.ToString() ?? string.Empty;
                 bool wallpaperStartup = SteamPathClassifier.CommandReferencesWallpaperContent(layout, command);
                 bool steamRelated = SteamPathClassifier.CommandReferencesSteamInstallation(layout, command) ||
                                     wallpaperStartup ||
@@ -239,23 +243,24 @@ public static class RegistryPersistenceAuditor
                     Evidence = [new("命令", command), new("路径关联", wallpaperStartup ? "Wallpaper/Workshop 内容目录" : "Steam 安装目录或扩展"), new("注册表视图", view.ToString())]
                 });
             }
+            return true;
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
             report.CoverageNotes.Add($"无法读取 {hiveLabel}\\{keyPath}（{view}）：{ex.Message}");
+            return false;
         }
     }
 
-    private static void InspectIfeo(RegistryView view, string executable, AuditReport report)
+    private static bool InspectIfeo(RegistryView view, string executable, AuditReport report, RegistryValueReader readValues)
     {
         const string basePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
         try
         {
-            using RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
-            using RegistryKey? key = baseKey.OpenSubKey($@"{basePath}\{executable}", writable: false);
+            IReadOnlyDictionary<string, object?> values = readValues(RegistryHive.LocalMachine, view, $@"{basePath}\{executable}");
             report.Metrics.PersistenceValuesChecked++;
-            string? debugger = key?.GetValue("Debugger")?.ToString();
-            if (string.IsNullOrWhiteSpace(debugger)) return;
+            string? debugger = values.GetValueOrDefault("Debugger")?.ToString();
+            if (string.IsNullOrWhiteSpace(debugger)) return true;
             report.Findings.Add(new AuditFinding
             {
                 Id = "P1.REGISTRY.IFEO",
@@ -269,26 +274,27 @@ public static class RegistryPersistenceAuditor
                 Target = $@"HKLM\{basePath}\{executable}\Debugger",
                 Evidence = [new("Debugger", debugger), new("注册表视图", view.ToString())]
             });
+            return true;
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
             report.CoverageNotes.Add($"无法读取 {executable} 的 IFEO 配置（{view}）：{ex.Message}");
+            return false;
         }
     }
 
-    private static void InspectSilentExit(RegistryView view, string executable, AuditReport report)
+    private static bool InspectSilentExit(RegistryView view, string executable, AuditReport report, RegistryValueReader readValues)
     {
         const string ifeoBase = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
         const string silentBase = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit";
         try
         {
-            using RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
-            using RegistryKey? ifeo = baseKey.OpenSubKey($@"{ifeoBase}\{executable}", writable: false);
-            using RegistryKey? silent = baseKey.OpenSubKey($@"{silentBase}\{executable}", writable: false);
+            IReadOnlyDictionary<string, object?> ifeo = readValues(RegistryHive.LocalMachine, view, $@"{ifeoBase}\{executable}");
+            IReadOnlyDictionary<string, object?> silent = readValues(RegistryHive.LocalMachine, view, $@"{silentBase}\{executable}");
             report.Metrics.PersistenceValuesChecked += 2;
-            int globalFlag = ParseInteger(ifeo?.GetValue("GlobalFlag"));
-            string? monitor = silent?.GetValue("MonitorProcess")?.ToString();
-            if ((globalFlag & 0x200) == 0 && string.IsNullOrWhiteSpace(monitor)) return;
+            int globalFlag = ParseInteger(ifeo.GetValueOrDefault("GlobalFlag"));
+            string? monitor = silent.GetValueOrDefault("MonitorProcess")?.ToString();
+            if ((globalFlag & 0x200) == 0 && string.IsNullOrWhiteSpace(monitor)) return true;
             report.Findings.Add(new AuditFinding
             {
                 Id = "P1.REGISTRY.SILENT_EXIT",
@@ -302,11 +308,23 @@ public static class RegistryPersistenceAuditor
                 Target = $@"HKLM\{silentBase}\{executable}",
                 Evidence = [new("GlobalFlag", $"0x{globalFlag:X}"), new("MonitorProcess", monitor ?? "未设置"), new("注册表视图", view.ToString())]
             });
+            return true;
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
             report.CoverageNotes.Add($"无法读取 {executable} 的 SilentProcessExit 配置（{view}）：{ex.Message}");
+            return false;
         }
+    }
+
+    private static IReadOnlyDictionary<string, object?> ReadRegistryValues(RegistryHive hive, RegistryView view, string keyPath)
+    {
+        using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
+        using RegistryKey? key = baseKey.OpenSubKey(keyPath, writable: false);
+        Dictionary<string, object?> values = new(StringComparer.OrdinalIgnoreCase);
+        if (key is not null)
+            foreach (string name in key.GetValueNames()) values[name] = key.GetValue(name);
+        return values;
     }
 
     private static int ParseInteger(object? value)

@@ -1,76 +1,87 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-using System.Text.Json;
 using IsMySteamSafe.Core.Models;
 using IsMySteamSafe.Core.Steam;
 
 namespace IsMySteamSafe.Core.Inspection;
 
-public sealed record KnownContentRule(string Id, string Sha256, string Label, bool Malware);
-
 public static class LightContentAuditor
 {
-    private static readonly Lazy<Dictionary<string, KnownContentRule>> Rules = new(() =>
-    {
-        using Stream stream = typeof(LightContentAuditor).Assembly.GetManifestResourceStream("IsMySteamSafe.Core.Inspection.known-content.json")!;
-        return JsonSerializer.Deserialize<List<KnownContentRule>>(stream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!
-            .ToDictionary(item => item.Sha256, StringComparer.OrdinalIgnoreCase);
-    });
-    private static readonly HashSet<string> CandidateExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".exe", ".dll", ".js", ".lua", ".vbs", ".ps1", ".bat", ".cmd", ".lnk", ".msi", ".zip", ".rar", ".7z", ".mp4", ".bin", ".py", ".pyc", ".idx" };
+    private static readonly HashSet<string> ScriptExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".js", ".mjs", ".cjs", ".lua", ".luau", ".vbs", ".ps1", ".bat", ".cmd", ".py", ".pyw", ".cs", ".csx" };
+    private static readonly HashSet<string> ContainerExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".zip", ".rar", ".7z", ".cab", ".msi", ".tar", ".gz", ".bz2", ".xz", ".pak", ".vpk" };
 
-    public static KnownContentRule? MatchHash(string hash) => Rules.Value.GetValueOrDefault(hash);
+    public static KnownContentRule? MatchHash(string hash) => KnownContentCatalog.LoadSnapshot().Rules.GetValueOrDefault(hash);
 
     public static async Task<AuditCheckResult> AuditAsync(SteamLayout layout, AuditReport report, CancellationToken token,
         int maximumEntries = 5000, long maximumBytes = 256L * 1024 * 1024, TimeSpan? maximumTime = null,
         IReadOnlyDictionary<string, KnownContentRule>? knownRules = null)
     {
         Stopwatch clock = Stopwatch.StartNew();
-        int before = report.Findings.Count, visited = 0;
+        int before = report.Findings.Count, visited = 0, hashed = 0;
         long bytes = 0;
         bool limited = false;
         bool readFailed = false;
         List<string> notes = [];
+        KnownContentSnapshot snapshot = KnownContentCatalog.LoadSnapshot();
+        report.RuleSet = snapshot.Metadata;
+        if (!string.IsNullOrEmpty(snapshot.Metadata.Notice))
+        {
+            report.CoverageNotes.Add(snapshot.Metadata.Notice);
+            readFailed = true;
+        }
+        IReadOnlyDictionary<string, KnownContentRule> rules = knownRules ?? snapshot.Rules;
         Dictionary<string, string> maliciousFiles = new(StringComparer.OrdinalIgnoreCase);
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-        foreach (ContentRoot root in layout.ContentRoots.OrderBy(r => r.Kind == "plugin" ? 0 : r.Kind == "mod" ? 1 : 2))
+        TimeSpan duration = maximumTime ?? TimeSpan.FromSeconds(12);
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(duration > TimeSpan.Zero ? duration : TimeSpan.Zero);
+        List<RootCursor> cursors = FairRoots(layout.ContentRoots).Select(root => new RootCursor(root,
+            ContentDiscovery.Files(root.Path, notes, Math.Max(0, maximumEntries), 8, deadline.Token).GetEnumerator())).ToList();
+        foreach (RootCursor cursor in cursors)
+            report.ContentSources.Add($"{cursor.Root.Kind} · AppID {cursor.Root.AppId ?? "—"} · {cursor.Root.Path}");
+        bool budgetStopped = false;
+        try
         {
-            report.ContentSources.Add($"{root.Kind} · AppID {root.AppId ?? "—"} · {root.Path}");
-            foreach (string path in ContentDiscovery.Files(root.Path, notes, maximumEntries, 8, token))
+            while (!budgetStopped && cursors.Any(cursor => !cursor.Complete))
+            foreach (RootCursor cursor in cursors.Where(cursor => !cursor.Complete))
             {
                 token.ThrowIfCancellationRequested();
+                if (visited >= maximumEntries || clock.Elapsed >= duration || deadline.IsCancellationRequested)
+                { budgetStopped = true; break; }
+                if (!cursor.Files.MoveNext()) { cursor.Complete = true; continue; }
+                ContentRoot root = cursor.Root;
+                string path = cursor.Files.Current;
                 if (!seen.Add(path)) continue;
-                if (++visited > maximumEntries || clock.Elapsed > (maximumTime ?? TimeSpan.FromSeconds(12)))
-                {
-                    limited = true;
-                    report.ContentLimitations.Add(new("达到数量或时间上限", root.Path,
-                        "该位置的剩余条目及后续内容根目录尚未全部检查，以下数量表示说明条数，不是未检查文件总数。"));
-                    break;
-                }
-                if (!CandidateExtensions.Contains(Path.GetExtension(path))) continue;
+                visited++; cursor.Visited++;
                 try
                 {
-                    long size = new FileInfo(path).Length;
                     await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    long size = stream.Length;
+                    string extension = Path.GetExtension(path);
                     byte[] header = new byte[32];
-                    int count = await stream.ReadAsync(header, token);
-                    bool container = count >= 4 && (header.AsSpan(0, 2).SequenceEqual("PK"u8) || header.AsSpan(0, 4).SequenceEqual("Rar!"u8) ||
-                        header[0] == 0x37 && header[1] == 0x7a || header.AsSpan(0, 4).SequenceEqual("MSCF"u8) || header[0] == 0xd0 && header[1] == 0xcf);
-                    if (Path.GetExtension(path).Equals(".mp4", StringComparison.OrdinalIgnoreCase))
+                    int count = await stream.ReadAsync(header, deadline.Token);
+                    bool container = ContainerExtensions.Contains(extension) || count >= 4 && (header.AsSpan(0, 2).SequenceEqual("PK"u8) || header.AsSpan(0, 4).SequenceEqual("Rar!"u8) ||
+                        header[0] == 0x37 && header[1] == 0x7a || header.AsSpan(0, 4).SequenceEqual("MSCF"u8) || header[0] == 0xd0 && header[1] == 0xcf || header[0] == 0x1f && header[1] == 0x8b);
+                    bool mediaInspected = false;
+                    if (extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase))
                     {
                         if (container || count >= 2 && header[0] == 'M' && header[1] == 'Z')
                             report.Findings.Add(ContentFinding(path, AuditLevel.NeedsReview, "视频扩展名与真实格式不符",
                                 "内容实际为压缩包或可执行文件，请不要直接运行。格式异常不是最终判毒结论。", "未计算", root));
                         else if (count >= 12 && header.AsSpan(4, 4).SequenceEqual("ftyp"u8))
                         {
-                            MediaProbe media = await MediaStructureProbe.InspectAsync(stream, token);
+                            MediaProbe media = await MediaStructureProbe.InspectAsync(stream, deadline.Token);
                             if (media.TrailingBytes > 0 && media.TailKind is not null)
                                 report.Findings.Add(ContentFinding(path, AuditLevel.NeedsReview, "媒体结构后存在额外内容",
                                     $"尾部识别到{media.TailKind}，需要进一步扫描，文件存在不等于已经执行。", "未计算", root));
-                            report.ContentLimitations.Add(new(media.Complete ? "视频已做结构检查，未做完整比对" : "媒体结构或尾随内容需进一步检查",
-                                path, media.Complete ? "未读取全部媒体数据进行哈希比对，不保证媒体内容绝对安全。" : "未完成媒体内容的深度检查。"));
+                            bool canHash = size <= 64L * 1024 * 1024 && size <= maximumBytes - bytes;
+                            report.ContentLimitations.Add(new(media.Complete ? "视频已做结构检查，未做深度内容分析" : "媒体结构或尾随内容需进一步检查",
+                                path, canHash ? "仍会比对完整文件 SHA-256，但未解析媒体中的全部内容，不保证绝对安全。" : "文件大小或预算限制导致未完整计算 SHA-256，仅做格式与结构检查。"));
                             limited = true;
-                            continue;
+                            mediaInspected = true;
+                            if (!canHash) continue;
                         }
                     }
                     if (size > 64L * 1024 * 1024 || size > maximumBytes - bytes)
@@ -80,34 +91,59 @@ public static class LightContentAuditor
                         continue;
                     }
                     stream.Position = 0;
-                    string hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, token));
-                    bytes += size;
-                    KnownContentRule? rule = knownRules is null ? MatchHash(hash) : knownRules.GetValueOrDefault(hash);
+                    string hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, deadline.Token));
+                    bytes += size; hashed++;
+                    KnownContentRule? rule = rules.GetValueOrDefault(hash);
                     if (rule is not null)
                     {
                         report.Findings.Add(ContentFinding(path, rule.Malware ? AuditLevel.HighlySuspicious : AuditLevel.NeedsReview,
-                            rule.Label, "文件内容与内置规则匹配，只证明文件存在，不证明已经执行或 Steam 已被篡改。", hash, root));
+                            rule.Label, "文件内容与已加载的可信指纹规则匹配，只证明文件存在，不证明已经执行或 Steam 已被篡改。", hash, root, rule));
                         if (rule.Malware && !container) maliciousFiles[path] = hash;
                     }
-                    else if (!container && size <= 2 * 1024 * 1024 && Path.GetExtension(path).ToLowerInvariant() is ".js" or ".lua" or ".vbs" or ".ps1" or ".bat" or ".cmd" or ".py")
+                    else if (!container && size <= 2 * 1024 * 1024 && ScriptExtensions.Contains(extension))
                     {
                         stream.Position = 0;
                         using StreamReader reader = new(stream, leaveOpen: true);
-                        string text = await reader.ReadToEndAsync(token);
-                        IReadOnlyList<string> signals = ScriptSignals.Analyze(text);
-                        if (signals.Count > 0) report.Findings.Add(ContentFinding(path, AuditLevel.NeedsReview,
-                            "内容脚本含可疑组合逻辑", string.Join("，", signals) + "。静态规则不是最终判毒结论。", hash, root));
+                        string text = await reader.ReadToEndAsync(deadline.Token);
+                        if (text.Contains('\0') || text.Contains('\uFFFD'))
+                        {
+                            limited = true;
+                            report.ContentLimitations.Add(new("脚本编码或实际格式不支持静态分析", path, "已完整计算 SHA-256，文本包含无法可靠解码的字节或二进制内容，未把解析失败当作安全。"));
+                        }
+                        else
+                        {
+                            IReadOnlyList<string> signals = ScriptSignals.Analyze(text, extension);
+                            if (signals.Count > 0) report.Findings.Add(ContentFinding(path, AuditLevel.NeedsReview,
+                                "内容脚本含可疑组合逻辑", string.Join("，", signals) + "。静态规则只提示需要核对，不能证明恶意、已执行或已外泄。", hash, root));
+                        }
                     }
                     if (container)
                     {
                         limited = true;
                         report.ContentLimitations.Add(new("压缩内容未展开", path, "仅检查外层内容，未解压、未索取密码，也未执行安装包。"));
                     }
+                    else if (!mediaInspected && (!ScriptExtensions.Contains(extension) || size > 2 * 1024 * 1024))
+                    {
+                        limited = true;
+                        string kind = extension.Equals(".pyc", StringComparison.OrdinalIgnoreCase) ? "Python 字节码未反编译" :
+                            extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase) ? "快捷方式未解析或执行" :
+                            ScriptExtensions.Contains(extension) ? "脚本超过静态分析大小上限" : "此格式仅做指纹比对，未做语义分析";
+                        report.ContentLimitations.Add(new(kind, path, "已完整计算 SHA-256。未命中已知指纹不代表内容安全；未进行此格式的完整语义或行为分析。"));
+                    }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 { readFailed = true; report.ContentLimitations.Add(new("文件读取失败", path, "文件可能被占用、访问受限或已发生变化，请核对后重试。", true)); }
             }
-            if (visited > maximumEntries || clock.Elapsed > (maximumTime ?? TimeSpan.FromSeconds(12))) break;
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { budgetStopped = true; }
+        finally { foreach (RootCursor cursor in cursors) cursor.Files.Dispose(); }
+        token.ThrowIfCancellationRequested();
+        if (budgetStopped)
+        {
+            limited = true;
+            foreach (RootCursor cursor in cursors.Where(cursor => !cursor.Complete))
+                report.ContentLimitations.Add(new("达到数量或时间上限", cursor.Root.Path,
+                    $"此来源已访问 {cursor.Visited:N0} 个文件，剩余内容尚未完成检查；来源按轮次交替检查，此数不是未检查文件总数。"));
         }
         if (maliciousFiles.Count > 0)
         {
@@ -122,18 +158,47 @@ public static class LightContentAuditor
         }
         int countFound = report.Findings.Count - before;
         return new AuditCheckResult { Id = "content-risk", Priority = AuditPriority.P1, Area = AuditArea.ContentSources,
-            Name = "工坊、MOD 与插件", Level = countFound > 0 ? report.Findings.Skip(before).MaxBy(f => AuditLabels.RiskRank(f.Level))!.Level :
+            Name = "游戏、工坊、MOD 与插件", Level = countFound > 0 ? report.Findings.Skip(before).MaxBy(f => AuditLabels.RiskRank(f.Level))!.Level :
                 readFailed ? AuditLevel.Incomplete : limited ? AuditLevel.Information : AuditLevel.Passed,
-            Summary = $"检查 {visited:N0} 个条目，读取 {bytes / 1024 / 1024:N0} MiB，发现 {countFound} 条内容或运行证据。", EvidenceCount = countFound };
+            Summary = $"访问 {visited:N0} 个文件，完成 {hashed:N0} 个 SHA-256 比对，哈希读取 {bytes / 1024 / 1024:N0} MiB，发现 {countFound} 条内容或运行证据；格式和预算限制见覆盖说明。", EvidenceCount = countFound };
     }
 
-    private static AuditFinding ContentFinding(string path, AuditLevel level, string title, string meaning, string hash, ContentRoot root) => new()
+    private sealed class RootCursor(ContentRoot root, IEnumerator<string> files)
     {
-        Id = "CONTENT." + (hash.Length == 64 ? hash[..16] : Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(path + title)))[..16]), Priority = AuditPriority.P1, Area = AuditArea.ContentSources, Level = level,
-        Title = title, WhatFound = hash.Length == 64 ? "在本机内容目录发现匹配文件。" : "在本机内容目录发现需要核对的格式或结构特征。", Meaning = meaning,
-        Recommendation = "不要打开可疑文件，核对来源后用 SteamSentinel 或专业杀毒软件隔离，随后重新体检。",
-        Target = path, EvidenceState = "file-present", Evidence = [new("SHA-256", hash), new("AppID", root.AppId ?? "未知"), new("内容来源", root.Kind)]
-    };
+        public ContentRoot Root { get; } = root;
+        public IEnumerator<string> Files { get; } = files;
+        public bool Complete { get; set; }
+        public int Visited { get; set; }
+    }
+
+    // Interleave source categories, then visit one file per root per round. A busy workshop
+    // must not make all installed-game roots disappear from either the scan or its report.
+    private static IEnumerable<ContentRoot> FairRoots(IEnumerable<ContentRoot> roots)
+    {
+        Queue<ContentRoot>[] groups = roots.DistinctBy(root => root.Path, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(root => root.Kind).OrderBy(group => group.Key switch { "game" => 0, "plugin" => 1, "mod" => 2, "workshop" => 3, _ => 4 })
+            .Select(group => new Queue<ContentRoot>(group.OrderBy(root => root.Path, StringComparer.OrdinalIgnoreCase))).ToArray();
+        while (groups.Any(group => group.Count > 0))
+            foreach (Queue<ContentRoot> group in groups)
+                if (group.TryDequeue(out ContentRoot? root)) yield return root;
+    }
+
+    private static AuditFinding ContentFinding(string path, AuditLevel level, string title, string meaning, string hash, ContentRoot root, KnownContentRule? matchedRule = null)
+    {
+        List<EvidenceItem> evidence = [new("SHA-256", hash), new("AppID", root.AppId ?? "未知"), new("内容来源", root.Kind)];
+        if (matchedRule is not null)
+        {
+            evidence.Add(new("指纹规则", matchedRule.Id));
+            if (!string.IsNullOrWhiteSpace(matchedRule.SourceUrl)) evidence.Add(new("公开分析来源", matchedRule.SourceUrl));
+        }
+        return new()
+        {
+            Id = "CONTENT." + (hash.Length == 64 ? hash[..16] : Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(path + title)))[..16]), Priority = AuditPriority.P1, Area = AuditArea.ContentSources, Level = level,
+            Title = title, WhatFound = matchedRule is not null ? "在本机内容目录发现与已加载指纹匹配的文件。" : "在本机内容目录发现需要核对的静态组合、格式或结构特征。", Meaning = meaning,
+            Recommendation = "不要打开可疑文件，核对来源后用 SteamSentinel 或专业杀毒软件隔离，随后重新体检。",
+            Target = path, EvidenceState = "file-present", Evidence = evidence
+        };
+    }
 
     private static void ObserveLoadedMalware(Dictionary<string, string> files, AuditReport report, CancellationToken token)
     {

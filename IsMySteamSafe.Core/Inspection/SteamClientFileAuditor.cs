@@ -4,6 +4,8 @@ using IsMySteamSafe.Core.Utilities;
 
 namespace IsMySteamSafe.Core.Inspection;
 
+public sealed record ClientFileClassification(AuditLevel Level, string Title, bool AcknowledgedModContext);
+
 public static class SteamClientFileAuditor
 {
     private static readonly string[] CandidateNames =
@@ -74,25 +76,9 @@ public static class SteamClientFileAuditor
                 string lowerName = name.ToLowerInvariant();
                 bool cefLocation = directory.Contains($"{Path.DirectorySeparatorChar}cef", StringComparison.OrdinalIgnoreCase);
                 bool millenniumPresent = Directory.Exists(Path.Combine(steamRoot, "millennium"));
-                bool userModContext = options.UserAcknowledgesClientMods && lowerName == "wsock32.dll" && millenniumPresent;
-
-                AuditLevel level;
-                string title;
-                if ((lowerName is "version.dll" or "msacm32.drv") && cefLocation && !signature.IsValveSigner)
-                {
-                    level = AuditLevel.HighlySuspicious;
-                    title = $"CEF 目录出现非 Valve 的 {name}";
-                }
-                else if (!signature.IsValveSigner)
-                {
-                    level = userModContext ? AuditLevel.NeedsReview : AuditLevel.HighlySuspicious;
-                    title = userModContext ? $"发现已声明的客户端注入组件 {name}" : $"Steam 客户端目录出现非 Valve 的 {name}";
-                }
-                else
-                {
-                    level = AuditLevel.NeedsReview;
-                    title = $"Steam 敏感目录出现额外的 {name}";
-                }
+                ClientFileClassification classification = ClassifyCandidate(name, cefLocation, millenniumPresent,
+                    options.UserAcknowledgesClientMods, signature);
+                bool userModContext = classification.AcknowledgedModContext;
 
                 FileInfo info = new(path);
                 FileVersionInfo version = FileVersionInfo.GetVersionInfo(path);
@@ -115,9 +101,9 @@ public static class SteamClientFileAuditor
                 {
                     Id = $"P0.DLL.{lowerName.ToUpperInvariant()}",
                     Priority = AuditPriority.P0,
-                    Level = level,
+                    Level = classification.Level,
                     Area = AuditArea.ClientFiles,
-                    Title = title,
+                    Title = classification.Title,
                     WhatFound = $"在 Steam 客户端敏感目录发现 {name}，其签名状态为“{signature.Detail}”。",
                     Meaning = userModContext
                         ? "你已声明主动安装客户端插件，因此这里只标记为需要核对，合法加载器也可能承载来历不明的插件。"
@@ -145,6 +131,24 @@ public static class SteamClientFileAuditor
             Summary = count == 0 ? $"已检查 {directories.Count} 个 Steam 客户端敏感目录，未见已知侧载文件名。" : $"发现 {count} 组需要核对的客户端文件。",
             EvidenceCount = count
         };
+    }
+
+    public static ClientFileClassification ClassifyCandidate(string name, bool cefLocation, bool millenniumPresent,
+        bool userAcknowledgesClientMods, SignatureResult signature)
+    {
+        string lowerName = name.ToLowerInvariant();
+        bool trustedValve = signature.IsValveSigner && AuthenticodeVerifier.IsTrustedValveSigner(signature.Status, signature.Subject);
+        if (trustedValve)
+            return new(AuditLevel.NeedsReview, $"Steam 敏感目录出现额外的 {name}", false);
+        if ((lowerName is "version.dll" or "msacm32.drv") && cefLocation)
+            return new(AuditLevel.HighlySuspicious, $"CEF 目录出现非 Valve 的 {name}", false);
+
+        // Explicit opt-in accommodates ordinary unsigned loaders, but cannot excuse a broken signature.
+        bool acknowledged = userAcknowledgesClientMods && lowerName == "wsock32.dll" && millenniumPresent &&
+            signature.Status is SignatureStatus.Valid or SignatureStatus.Unsigned;
+        return acknowledged
+            ? new(AuditLevel.NeedsReview, $"发现已声明的客户端注入组件 {name}", true)
+            : new(AuditLevel.HighlySuspicious, $"Steam 客户端目录出现非 Valve 的 {name}", false);
     }
 
     public static List<string> GetSensitiveDirectories(string steamRoot)

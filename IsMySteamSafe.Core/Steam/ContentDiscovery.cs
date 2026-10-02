@@ -65,35 +65,56 @@ public static class ContentDiscovery
     public static IEnumerable<string> Files(string root, List<string> notes, int maximumEntries,
         int maximumDepth, CancellationToken token = default)
     {
-        Stack<(string Path, int Depth)> pending = new();
-        pending.Push((root, 0));
+        Queue<(string Path, int Depth)> pending = new();
+        pending.Enqueue((root, 0));
         int visited = 0;
-        while (pending.TryPop(out var next))
+        while (pending.TryDequeue(out var next))
         {
             token.ThrowIfCancellationRequested();
             if (!IsLocalSafePath(next.Path)) { notes.Add($"跳过网络路径或重解析点：{next.Path}"); continue; }
-            string[] entries;
-            try { entries = Directory.EnumerateFileSystemEntries(next.Path).Take(Math.Max(0, maximumEntries - visited) + 1).ToArray(); }
+            IEnumerator<string> iterator;
+            try { iterator = Directory.EnumerateFileSystemEntries(next.Path).GetEnumerator(); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             { notes.Add($"目录未完整读取：{next.Path}，{ex.Message}"); continue; }
-            foreach (string entry in entries.OrderBy(e => PathPriority(e)))
+            using (iterator)
             {
-                token.ThrowIfCancellationRequested();
-                if (++visited > maximumEntries) { notes.Add($"内容枚举达到 {maximumEntries} 项上限：{root}"); yield break; }
-                if (!IsLocalSafePath(entry)) { notes.Add($"跳过无法安全读取的路径：{entry}"); continue; }
-                if (Directory.Exists(entry))
+                bool ended = false;
+                while (!ended)
                 {
-                    if (next.Depth >= maximumDepth) notes.Add($"子目录深度达到上限：{entry}");
-                    else pending.Push((entry, next.Depth + 1));
+                    // Round-robin callers keep many enumerators alive. Retain only one small
+                    // priority batch per root, not a 5,001-path array for every installed game.
+                    List<string> entries = new(64);
+                    try
+                    {
+                        for (int index = 0; index < 64 && entries.Count <= maximumEntries - visited; index++)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            if (!iterator.MoveNext()) { ended = true; break; }
+                            entries.Add(iterator.Current);
+                        }
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    { notes.Add($"目录未完整读取：{next.Path}，{ex.Message}"); ended = true; }
+                    foreach (string entry in entries.OrderBy(PathPriority))
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (++visited > maximumEntries) { notes.Add($"内容枚举达到 {maximumEntries} 项上限：{root}"); yield break; }
+                        if (!IsLocalSafePath(entry)) { notes.Add($"跳过无法安全读取的路径：{entry}"); continue; }
+                        if (Directory.Exists(entry))
+                        {
+                            if (next.Depth >= maximumDepth) notes.Add($"子目录深度达到上限：{entry}");
+                            else pending.Enqueue((entry, next.Depth + 1));
+                        }
+                        else if (File.Exists(entry)) yield return entry;
+                    }
                 }
-                else if (File.Exists(entry)) yield return entry;
             }
         }
     }
 
     private static int PathPriority(string path) => System.IO.Path.GetExtension(path).ToLowerInvariant() switch
     {
-        ".exe" or ".dll" or ".lnk" or ".ps1" or ".bat" or ".cmd" or ".vbs" or ".js" or ".lua" or ".py" => 0,
+        ".exe" or ".dll" or ".lnk" or ".ps1" or ".bat" or ".cmd" or ".vbs" or ".js" or ".mjs" or ".cjs" or ".lua" or ".luau" or ".py" or ".pyw" or ".cs" or ".csx" => 0,
         ".mp4" => 2,
         _ => 1
     };
@@ -132,6 +153,7 @@ public static class ContentDiscovery
                     if (!IsLocalSafePath(game) || !Directory.Exists(game) || !IsWithin(game, common)) continue;
                     string name = values.GetValueOrDefault("name", dir);
                     layout.Games.Add(new(appId, name, game));
+                    layout.ContentRoots.Add(new(game, appId, "game", name));
                     string[] modPaths = appId == "3167020" || dir.Contains("Duckov", StringComparison.OrdinalIgnoreCase)
                         ? ["Duckov_Data/Mods", "Mods", "BepInEx/plugins"]
                         : ["Mods", "BepInEx/plugins"];

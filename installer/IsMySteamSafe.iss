@@ -5,7 +5,7 @@
   #error OutputDir must be supplied.
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.2.7"
+  #define AppVersion "0.2.8"
 #endif
 
 #if !FileExists(PayloadDir + "\IsMySteamSafe.exe") || !FileExists(PayloadDir + "\IsMySteamSafe.Standard.exe") || !FileExists(PayloadDir + "\IsMySteamSafe.Compat.exe")
